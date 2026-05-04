@@ -1,0 +1,17 @@
+const asyncHandler = require('express-async-handler');
+const Attendance = require('../models/Attendance');
+const User = require('../models/User');
+const AttendanceUtils = require('../utils/attendanceUtils');
+
+exports.getAttendance = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+  const student = await User.findById(userId).populate('classroom');
+  if (!student) {
+    res.status(404);
+    throw new Error('Student not found');
+  }
+  // fetch attendance records where student appears
+  const records = await Attendance.find({ 'records.student': userId }).populate('subject');
+  const summary = AttendanceUtils.calculateStudentAttendance(userId, records);
+  res.json({ classroom: student.classroom, attendance: summary });
+});
