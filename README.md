@@ -1,86 +1,40 @@
-# Diem's Attendance Management System
+# DIEMS Attendance Management System
 
-## Overview
-Diem's Attendance Management System is a comprehensive software solution designed to streamline attendance tracking for educational institutions, offices, or events. It provides an intuitive interface for teachers/admins to mark attendance, generate reports, and manage student/employee records.
+This repository contains the attendance system backend in `Backend/` and the frontend in `Frontend/`.
 
-## Features
-- **Easy Attendance Marking**: Quick check-in/out with QR code or manual entry.
-- **Real-time Reports**: Generate daily, monthly, and custom attendance reports.
-- **Student/Employee Management**: Add, edit, and view profiles.
-- **Notifications**: Email/SMS alerts for absences or late arrivals.
-- **Data Export**: Export to CSV, PDF, or Excel.
-- **User Roles**: Admin, Teacher, Student/Employee access levels.
-- **Dashboard**: Visual analytics and attendance trends.
+## What is implemented
 
-## Tech Stack
-- **Frontend**: HTML, CSS, JavaScript (React/Vue/Angular - to be specified)
-- **Backend**: Node.js/Python/PHP (Express/Django/Laravel - to be specified)
-- **Database**: MySQL/PostgreSQL/MongoDB
-- **Other**: Bootstrap for UI, Chart.js for analytics
+- Role-based login for Super Admin, Admin, Teacher, and Student
+- Attendance creation and update flow for teachers
+- Student attendance dashboard with subject-wise and overall percentages
+- MongoDB persistence, JWT authentication, password hashing, and email alerts
 
-## Prerequisites
-- Node.js (v18+)
-- Python 3.10+ (if applicable)
-- MySQL/PostgreSQL
-- Git
+## Where to start
 
-## Installation
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/diems-attendance-system.git
-   cd "Diems Attendance Management System"
-   ```
-2. Install dependencies:
-   ```
-   # For Node.js
-   npm install
-   
-   # For Python
-   pip install -r requirements.txt
-   ```
-3. Set up database:
-   - Create database `attendance_db`
-   - Run migrations: `npm run migrate` or `python manage.py migrate`
-4. Configure environment:
-   - Copy `.env.example` to `.env` and update credentials.
+- Backend setup and API usage: [Backend/readme.md](Backend/readme.md)
+- Backend environment template: [Backend/.env.example](Backend/.env.example)
 
-## Usage
-1. Start the development server:
-   ```
-   # Node.js
-   npm start
-   
-   # Python
-   python manage.py runserver
-   ```
-2. Open [http://localhost:3000](http://localhost:3000) in your browser.
-3. Login with default admin credentials (admin/admin).
+## Backend API summary
 
-## Project Structure
-```
-Diems Attendance Management System/
-├── backend/          # Server-side code
-├── frontend/         # Client-side code
-├── database/         # Schema and migrations
-├── docs/             # Documentation
-├── README.md         # This file
-└── .env.example      # Environment config
-```
+- `POST /api/auth/login`
+- `POST /api/admin/create-teacher`
+- `POST /api/admin/create-student`
+- `POST /api/teacher/mark-attendance`
+- `PUT /api/teacher/update-attendance/:attendanceId`
+- `GET /api/student/attendance`
 
-## Contributing
-1. Fork the project
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+## Frontend integration
 
-## License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Frontend developers should:
 
-## Support
-For issues or feature requests, open a GitHub issue or contact [your-email@example.com].
+1. Log in with `POST /api/auth/login`
+2. Store the JWT token returned by the backend
+3. Send `Authorization: Bearer <token>` on protected routes
+4. Route users based on the `role` returned in the login response
+5. Use the request and response examples in [Backend/readme.md](Backend/readme.md)
 
----
+## Security note
 
-*Built with ❤️ for Diem's Institution*
+Do not commit real `.env` values. Rotate any exposed database or SMTP credentials immediately and replace them with secure local or secret-manager values.
+
 
