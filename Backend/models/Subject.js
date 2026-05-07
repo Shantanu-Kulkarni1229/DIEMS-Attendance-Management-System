@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const SubjectSchema = new mongoose.Schema({
   name: { type: String, required: true },
   code: { type: String },
+  year: { type: Number, enum: [1, 2, 3, 4], required: false },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, { timestamps: true });
 

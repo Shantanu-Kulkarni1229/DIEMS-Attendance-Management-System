@@ -40,3 +40,12 @@ exports.updateAttendance = asyncHandler(async (req, res) => {
   await AttendanceService.recalculateForClassroom(attendance.classroom, attendance.subject);
   res.json(attendance);
 });
+
+exports.getTeacherAttendanceRecords = asyncHandler(async (req, res) => {
+  const teacherId = req.user._id;
+  const records = await Attendance.find({ teacher: teacherId })
+    .populate('classroom', 'name')
+    .populate('subject', 'name code')
+    .sort({ date: -1 });
+  res.status(200).json(records);
+});
