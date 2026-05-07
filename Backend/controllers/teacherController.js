@@ -1,6 +1,7 @@
 const asyncHandler = require('express-async-handler');
 const Attendance = require('../models/Attendance');
-const User = require('../models/User');
+const Subject = require('../models/Subject');
+const Teacher = require('../models/Teacher');
 const AttendanceService = require('../services/attendanceService');
 
 exports.markAttendance = asyncHandler(async (req, res) => {
@@ -48,4 +49,32 @@ exports.getTeacherAttendanceRecords = asyncHandler(async (req, res) => {
     .populate('subject', 'name code')
     .sort({ date: -1 });
   res.status(200).json(records);
+});
+
+exports.getTeacherDashboard = asyncHandler(async (req, res) => {
+  const teacher = await Teacher.findById(req.user._id)
+    .select('-password')
+    .populate('assignedClassrooms', 'name year');
+
+  if (!teacher) {
+    res.status(404);
+    throw new Error('Teacher not found');
+  }
+
+  const assignedSubjects = await Subject.find({ assignedTeacher: req.user._id })
+    .populate('assignedTeacher', 'name email branch')
+    .sort({ name: 1, code: 1 });
+
+  const attendanceRecords = await Attendance.find({ teacher: req.user._id })
+    .populate('classroom', 'name year')
+    .populate('subject', 'name code year assignedTeacher')
+    .sort({ date: -1 })
+    .limit(10);
+
+  res.status(200).json({
+    teacher,
+    assignedSubjects,
+    attendanceRecords,
+    sourceOfTruth: 'subject.assignedTeacher'
+  });
 });

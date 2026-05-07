@@ -1,23 +1,19 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
-const roles = ['SuperAdmin', 'Admin', 'Teacher', 'Student'];
 const branches = ['CSE', 'CIVIL', 'MECH', 'CSE(AIML)', 'ENTC', 'MBA', 'BSH'];
 
 const UserSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true, lowercase: true },
   password: { type: String, required: true },
-  role: { type: String, enum: roles, required: true },
-  // branch assignment (for Admins and their subordinates)
   branch: { type: String, enum: branches },
-  // teacher-specific
-  assignedSubjects: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Subject' }],
-  assignedClassrooms: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Classroom' }],
-  // student-specific
-  classroom: { type: mongoose.Schema.Types.ObjectId, ref: 'Classroom' },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
-}, { timestamps: true });
+}, {
+  timestamps: true,
+  discriminatorKey: 'role',
+  collection: 'users'
+});
 
 UserSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
@@ -27,7 +23,7 @@ UserSchema.pre('save', async function (next) {
 });
 
 UserSchema.methods.matchPassword = async function (entered) {
-  return await bcrypt.compare(entered, this.password);
+  return bcrypt.compare(entered, this.password);
 };
 
 module.exports = mongoose.model('User', UserSchema);

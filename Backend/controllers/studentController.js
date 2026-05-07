@@ -1,11 +1,11 @@
 const asyncHandler = require('express-async-handler');
 const Attendance = require('../models/Attendance');
-const User = require('../models/User');
+const Student = require('../models/Student');
 const AttendanceUtils = require('../utils/attendanceUtils');
 
 exports.getAttendance = asyncHandler(async (req, res) => {
   const userId = req.user._id;
-  const student = await User.findById(userId).populate('classroom');
+  const student = await Student.findById(userId).populate('classroom');
   if (!student) {
     res.status(404);
     throw new Error('Student not found');

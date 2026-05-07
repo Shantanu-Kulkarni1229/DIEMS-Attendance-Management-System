@@ -171,8 +171,23 @@ Request:
 	"name": "Teacher One",
 	"email": "teacher1@college.edu",
 	"password": "password123",
-	"assignedSubjects": [],
+	"assignedClassrooms": [],
 	"assignedClassrooms": []
+}
+```
+
+#### POST `/api/admin/assign-teacher-subject`
+
+Protected: `SuperAdmin`, `Admin`
+
+Use this when the subject already exists and you want to assign a teacher to it.
+
+Request:
+
+```json
+{
+	"teacherId": "teacher_user_id_here",
+	"subjectId": "subject_id_here"
 }
 ```
 
@@ -231,6 +246,43 @@ Request:
 			"status": "present"
 		}
 	]
+}
+```
+
+#### GET `/api/teacher/dashboard`
+
+Protected: `Teacher`
+
+This endpoint returns the teacher profile, recent attendance records, and assigned subjects.
+The assigned subjects list is derived only from `subject.assignedTeacher`, which is the single source of truth.
+
+Response:
+
+```json
+{
+	"teacher": {
+		"_id": "teacher_user_id_here",
+		"name": "Teacher One",
+		"email": "teacher1@college.edu",
+		"branch": "CSE",
+		"assignedClassrooms": []
+	},
+	"assignedSubjects": [
+		{
+			"_id": "subject_id_here",
+			"name": "Database Systems",
+			"code": "DBMS101",
+			"year": 2,
+			"assignedTeacher": {
+				"_id": "teacher_user_id_here",
+				"name": "Teacher One",
+				"email": "teacher1@college.edu",
+				"branch": "CSE"
+			}
+		}
+	],
+	"attendanceRecords": [],
+	"sourceOfTruth": "subject.assignedTeacher"
 }
 ```
 

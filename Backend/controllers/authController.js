@@ -20,6 +20,16 @@ exports.login = asyncHandler(async (req, res) => {
   }
   res.json({
     token: generateToken(user._id),
-    user: { id: user._id, name: user.name, email: user.email, role: user.role }
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      prn: user.prn,
+      rollNo: user.rollNo,
+      className: user.className,
+      division: user.division,
+      branch: user.branch
+    }
   });
 });
