@@ -18,7 +18,7 @@ const AdminDashboard = () => {
     password: '',
     subjects: [],
     customSubjects: [], // { name, year }
-    classrooms: [],
+    // classrooms removed per request
   });
 
   // Student form
@@ -67,11 +67,10 @@ const AdminDashboard = () => {
           ...teacherForm.subjects,
           ...(teacherForm.customSubjects || []).map((s) => ({ name: s.name, year: s.year }))
         ],
-        classrooms: teacherForm.classrooms,
       };
       await createTeacher(payload);
       setSuccess('Teacher created successfully!');
-      setTeacherForm({ name: '', email: '', password: '', subjects: [], customSubjects: [], classrooms: [] });
+      setTeacherForm({ name: '', email: '', password: '', subjects: [], customSubjects: [] });
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
       setError(err.message);
@@ -201,35 +200,7 @@ const AdminDashboard = () => {
               required
             />
             
-            {/* Multi-select for Subjects (existing) */}
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Assign Existing Subjects</label>
-              <div className="border-2 border-sky-200 rounded-lg p-3 max-h-40 overflow-y-auto space-y-2">
-                {subjects.map((subject) => (
-                  <label key={subject._id} className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={teacherForm.subjects.includes(subject._id)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setTeacherForm({
-                            ...teacherForm,
-                            subjects: [...teacherForm.subjects, subject._id]
-                          });
-                        } else {
-                          setTeacherForm({
-                            ...teacherForm,
-                            subjects: teacherForm.subjects.filter(s => s !== subject._id)
-                          });
-                        }
-                      }}
-                      className="w-4 h-4 border-2 border-sky-300 rounded"
-                    />
-                    <span className="text-slate-900">{subject.name} {subject.year ? `({subject.year}yr)` : ''}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+            {/* Existing subjects selection removed per request */}
 
             {/* Add custom subjects by name + year */}
             <div>
@@ -291,35 +262,7 @@ const AdminDashboard = () => {
               )}
             </div>
 
-            {/* Multi-select for Classrooms */}
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Assign Classrooms</label>
-              <div className="border-2 border-sky-200 rounded-lg p-3 max-h-40 overflow-y-auto space-y-2">
-                {classrooms.map((classroom) => (
-                  <label key={classroom._id} className="flex items-center gap-3 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={teacherForm.classrooms.includes(classroom._id)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setTeacherForm({
-                            ...teacherForm,
-                            classrooms: [...teacherForm.classrooms, classroom._id]
-                          });
-                        } else {
-                          setTeacherForm({
-                            ...teacherForm,
-                            classrooms: teacherForm.classrooms.filter(c => c !== classroom._id)
-                          });
-                        }
-                      }}
-                      className="w-4 h-4 border-2 border-sky-300 rounded"
-                    />
-                    <span className="text-slate-900">{classroom.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+            {/* Classrooms assignment removed per request */}
 
             <button
               type="submit"
