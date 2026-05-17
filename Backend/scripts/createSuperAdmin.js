@@ -1,12 +1,11 @@
 require('dotenv').config();
 const connectDB = require('../config/db');
-const User = require('../models/User');
+const SuperAdmin = require('../models/SuperAdmin');
 
 const SUPERADMIN = {
   name: 'Shantanu Kulkarni',
   email: 'shantanuprogramming@gmail.com',
   password: 'shantanu@123',
-  role: 'SuperAdmin'
 };
 
 const create = async () => {
@@ -20,12 +19,12 @@ const create = async () => {
     }
 
     await connectDB(mongoUri);
-    const exists = await User.findOne({ email: SUPERADMIN.email });
+    const exists = await SuperAdmin.findOne({ email: SUPERADMIN.email });
     if (exists) {
       console.log('SuperAdmin already exists:', exists.email);
       process.exit(0);
     }
-    const user = await User.create(SUPERADMIN);
+    const user = await SuperAdmin.create(SUPERADMIN);
     console.log('Created SuperAdmin:', user.email);
     process.exit(0);
   } catch (err) {

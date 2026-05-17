@@ -1,13 +1,13 @@
 const cron = require('node-cron');
 const Attendance = require('../models/Attendance');
-const User = require('../models/User');
+const Student = require('../models/Student');
 const AttendanceUtils = require('../utils/attendanceUtils');
 const { sendEmail } = require('../services/emailService');
 
 const checkAndAlert = async () => {
   try {
     // get all students
-    const students = await User.find({ role: 'Student' }).populate('classroom');
+    const students = await Student.find({}).populate('classroom');
     for (const student of students) {
       const records = await Attendance.find({ 'records.student': student._id }).populate('subject');
       const summary = AttendanceUtils.calculateStudentAttendance(student._id, records);

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { createAdmin, createTeacher, createStudent, getTeachers, getStudents, getClassrooms, getSubjects } = require('../controllers/adminController');
+const { createAdmin, createTeacher, createStudent, assignTeacherToSubject, getTeachers, getStudents, getClassrooms, getSubjects } = require('../controllers/adminController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorizeRoles } = require('../middleware/roleMiddleware');
 
@@ -10,6 +10,7 @@ router.post('/create-admin', protect, authorizeRoles('SuperAdmin'), createAdmin)
 // Admin & SuperAdmin - create teachers and students
 router.post('/create-teacher', protect, authorizeRoles('SuperAdmin', 'Admin'), createTeacher);
 router.post('/create-student', protect, authorizeRoles('SuperAdmin', 'Admin'), createStudent);
+router.post('/assign-teacher-subject', protect, authorizeRoles('SuperAdmin', 'Admin'), assignTeacherToSubject);
 
 // Get resources
 router.get('/teachers', protect, authorizeRoles('SuperAdmin', 'Admin'), getTeachers);
