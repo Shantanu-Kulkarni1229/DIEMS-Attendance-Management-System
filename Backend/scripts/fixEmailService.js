@@ -1,4 +1,7 @@
-const nodemailer = require('nodemailer');
+const fs = require('fs');
+const path = require('path');
+
+const code = `const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -54,38 +57,8 @@ const sendTeacherCredentials = async (params) => {
   });
 };
 
-const sendStudentCredentials = async (params) => {
-  const { studentEmail, studentName, rollNumber, temporaryPassword, loginLink } = params;
-  const htmlTemplate = [
-    '<html><head><style>',
-    'body { font-family: Arial, sans-serif; background: #f5f5f5; }',
-    '.container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); overflow: hidden; }',
-    '.header { background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%); color: white; padding: 40px; text-align: center; }',
-    '.content { padding: 40px; }',
-    '.info-box { background: #f0f9ff; border-left: 4px solid #0ea5e9; padding: 15px; margin: 15px 0; }',
-    '.button { background: linear-gradient(135deg, #0ea5e9 0%, #3b82f6 100%); color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; }',
-    '</style></head><body>',
-    '<div class="container">',
-    '<div class="header"><h1>Welcome to DIEMS</h1><p>Your student account has been created</p></div>',
-    '<div class="content">',
-    '<p>Dear <strong>' + studentName + '</strong>,</p>',
-    '<p>Your account has been successfully created. Below are your login credentials:</p>',
-    '<div class="info-box">',
-    '<p><strong>Email:</strong> ' + studentEmail + '</p>',
-    '<p><strong>Roll Number:</strong> ' + rollNumber + '</p>',
-    '<p><strong>Temporary Password:</strong> ' + temporaryPassword + '</p>',
-    '</div>',
-    '<p><strong>Next Steps:</strong></p>',
-    '<ol><li>Click the login button below</li><li>Enter your email and temporary password</li><li>Change your password after first login</li></ol>',
-    '<p style="text-align: center;"><a href="' + loginLink + '" class="button">Login to Dashboard</a></p>',
-    '</div></div></body></html>'
-  ].join('');
-  
-  return await sendEmail({ 
-    to: studentEmail, 
-    subject: 'Welcome to DIEMS Attendance Management - Your Login Credentials', 
-    html: htmlTemplate 
-  });
-};
+module.exports = { sendEmail, sendTeacherCredentials };
+`;
 
-module.exports = { sendEmail, sendTeacherCredentials, sendStudentCredentials };
+fs.writeFileSync(path.join(__dirname, '..', 'services', 'emailService.js'), code);
+console.log('✅ emailService.js updated successfully');

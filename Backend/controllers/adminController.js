@@ -5,6 +5,7 @@ const Student = require('../models/Student');
 const User = require('../models/User');
 const Classroom = require('../models/Classroom');
 const Subject = require('../models/Subject');
+const { sendTeacherCredentials } = require('../services/emailService');
 
 exports.createAdmin = asyncHandler(async (req, res) => {
   const { name, email, password, branch } = req.body;
@@ -75,6 +76,20 @@ exports.createTeacher = asyncHandler(async (req, res) => {
     assignedClassrooms: classrooms,
     createdBy: req.user._id
   });
+
+  // Send email with credentials
+    const loginLink = process.env.FRONTEND_URL || 'http://localhost:5173';
+    try {
+      await sendTeacherCredentials({
+        teacherEmail: email,
+        teacherName: name,
+        temporaryPassword: password,
+        loginLink: loginLink
+      });
+    } catch (emailError) {
+      console.error('Failed to send credentials email:', emailError);
+      // Don't throw - teacher is already created, just log the error
+    }
 
   await Subject.updateMany(
     { _id: { $in: subjectIds } },

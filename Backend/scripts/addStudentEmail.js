@@ -1,4 +1,7 @@
-const nodemailer = require('nodemailer');
+const fs = require('fs');
+const path = require('path');
+
+const code = `const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -89,3 +92,7 @@ const sendStudentCredentials = async (params) => {
 };
 
 module.exports = { sendEmail, sendTeacherCredentials, sendStudentCredentials };
+`;
+
+fs.writeFileSync(path.join(__dirname, '..', 'services', 'emailService.js'), code);
+console.log('✅ emailService.js updated with sendStudentCredentials');

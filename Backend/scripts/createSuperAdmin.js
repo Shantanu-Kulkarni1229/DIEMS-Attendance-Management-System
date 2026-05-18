@@ -8,6 +8,7 @@ const SUPERADMIN = {
   password: 'shantanu@123',
 };
 
+
 const create = async () => {
   try {
     // Allow passing the MongoDB URI as a CLI argument for convenience
