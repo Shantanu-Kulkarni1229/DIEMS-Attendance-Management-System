@@ -7,6 +7,8 @@ const Student = require('../models/Student');
 const SuperAdmin = require('../models/SuperAdmin');
 const Classroom = require('../models/Classroom');
 const Subject = require('../models/Subject');
+const TimetableEntry = require('../models/TimetableEntry');
+const LectureSession = require('../models/LectureSession');
 
 const seedUsers = {
   superAdmin: {
@@ -107,6 +109,16 @@ async function upsertSubject(seed, createdBy) {
   });
 }
 
+const buildSessionTimes = (date, startTime, endTime) => {
+  const start = new Date(date);
+  const end = new Date(date);
+  const [sh, sm] = startTime.split(':').map(Number);
+  const [eh, em] = endTime.split(':').map(Number);
+  start.setHours(sh, sm, 0, 0);
+  end.setHours(eh, em, 0, 0);
+  return { start, end };
+};
+
 async function seed() {
   try {
     const mongoUri = process.argv[2] || process.env.MONGO_URI;
@@ -138,6 +150,85 @@ async function seed() {
 
     await Subject.updateMany({ _id: { $in: subjects.map((subject) => subject._id) } }, { $set: { assignedTeacher: teacher._id } });
 
+    const today = new Date();
+    const dayStart = new Date(today);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(today);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    const ttMl = await TimetableEntry.findOneAndUpdate(
+      {
+        classroom: classrooms[1]._id,
+        subject: subjects[0]._id,
+        plannedTeacher: teacher._id,
+        dayOfWeek: dayStart.getDay(),
+        startTime: '10:15',
+        endTime: '11:15'
+      },
+      {
+        $set: {
+          validFrom: dayStart,
+          validTo: dayEnd,
+          isActive: true,
+          createdBy: admin._id
+        }
+      },
+      { upsert: true, new: true }
+    );
+
+    const ttCn = await TimetableEntry.findOneAndUpdate(
+      {
+        classroom: classrooms[1]._id,
+        subject: subjects[1]._id,
+        plannedTeacher: teacher._id,
+        dayOfWeek: dayStart.getDay(),
+        startTime: '11:15',
+        endTime: '12:15'
+      },
+      {
+        $set: {
+          validFrom: dayStart,
+          validTo: dayEnd,
+          isActive: true,
+          createdBy: admin._id
+        }
+      },
+      { upsert: true, new: true }
+    );
+
+    const mlTimes = buildSessionTimes(dayStart, ttMl.startTime, ttMl.endTime);
+    const cnTimes = buildSessionTimes(dayStart, ttCn.startTime, ttCn.endTime);
+
+    await LectureSession.findOneAndUpdate(
+      { timetableEntry: ttMl._id, date: dayStart },
+      {
+        $set: {
+          startDateTime: mlTimes.start,
+          endDateTime: mlTimes.end,
+          classroom: ttMl.classroom,
+          subject: ttMl.subject,
+          plannedTeacher: ttMl.plannedTeacher,
+          status: 'planned'
+        }
+      },
+      { upsert: true, new: true }
+    );
+
+    await LectureSession.findOneAndUpdate(
+      { timetableEntry: ttCn._id, date: dayStart },
+      {
+        $set: {
+          startDateTime: cnTimes.start,
+          endDateTime: cnTimes.end,
+          classroom: ttCn.classroom,
+          subject: ttCn.subject,
+          plannedTeacher: ttCn.plannedTeacher,
+          status: 'planned'
+        }
+      },
+      { upsert: true, new: true }
+    );
+
     const student = await upsertUser(Student, {
       ...seedUsers.student,
       extra: {
@@ -159,6 +250,7 @@ async function seed() {
     console.log(`- Student: ${student.email}`);
     console.log(`- Classrooms: ${classrooms.map((classroom) => classroom.name).join(', ')}`);
     console.log(`- Subjects: ${subjects.map((subject) => subject.name).join(', ')}`);
+    console.log('- Timetable: 10:15-11:15 and 11:15-12:15 sessions generated for today');
     process.exit(0);
   } catch (error) {
     console.error('Seed failed:', error.message || error);

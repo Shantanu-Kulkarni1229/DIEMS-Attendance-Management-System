@@ -9,7 +9,7 @@ const toInputDate = (date = new Date()) => {
   return `${y}-${m}-${day}`;
 };
 
-export default function MarkAttendanceModal({ onClose, initialData }) {
+export default function MarkAttendanceModal({ onClose, initialData, onSaved }) {
   const [classrooms, setClassrooms] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [students, setStudents] = useState([]);
@@ -17,6 +17,7 @@ export default function MarkAttendanceModal({ onClose, initialData }) {
   const [highlightedRows, setHighlightedRows] = useState([]);
   const [selectedClassroomId, setSelectedClassroomId] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
+  const [selectedSessionId, setSelectedSessionId] = useState(initialData?.sessionId || '');
   const [date, setDate] = useState(toInputDate());
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -25,18 +26,21 @@ export default function MarkAttendanceModal({ onClose, initialData }) {
   useEffect(() => {
     const loadInit = async () => {
       try {
-        const [classroomData, subjectData] = await Promise.all([
-          get('/api/admin/classrooms'),
-          get('/api/admin/subjects')
-        ]);
-
-        const classes = Array.isArray(classroomData) ? classroomData : [];
-        const subs = Array.isArray(subjectData) ? subjectData : [];
+        const dashboard = await get('/api/teacher/dashboard');
+        const classes = Array.isArray(dashboard?.teacher?.assignedClassrooms) ? dashboard.teacher.assignedClassrooms : [];
+        const subs = Array.isArray(dashboard?.assignedSubjects) ? dashboard.assignedSubjects : [];
         setClassrooms(classes);
         setSubjects(subs);
 
         if (classes[0]) setSelectedClassroomId(classes[0]._id);
         if (subs[0]) setSelectedSubjectId(subs[0]._id);
+
+        if (initialData && initialData.sessionId) {
+          setSelectedSessionId(initialData.sessionId);
+          if (initialData.classroomId) setSelectedClassroomId(initialData.classroomId);
+          if (initialData.subjectId) setSelectedSubjectId(initialData.subjectId);
+          if (initialData.date) setDate(toInputDate(initialData.date));
+        }
 
         // Best-effort preselect based on schedule card text
         if (initialData && initialData.class) {
@@ -49,7 +53,7 @@ export default function MarkAttendanceModal({ onClose, initialData }) {
           if (bySubject) setSelectedSubjectId(bySubject._id);
         }
       } catch (error) {
-        setMessage({ type: 'error', text: error.message || 'Failed to load classes/subjects.' });
+        setMessage({ type: 'error', text: error.message || 'Failed to load your assigned classes/subjects.' });
       } finally {
         setLoading(false);
       }
@@ -141,15 +145,27 @@ export default function MarkAttendanceModal({ onClose, initialData }) {
     setSaving(true);
     setMessage(null);
     try {
-      await post('/api/teacher/mark-attendance', {
-        date,
-        classroom: selectedClassroomId,
-        subject: selectedSubjectId,
-        records
-      });
+      if (selectedSessionId) {
+        await post(`/api/timetable/teacher/sessions/${selectedSessionId}/attendance`, { records });
+      } else {
+        await post('/api/teacher/mark-attendance', {
+          date,
+          classroom: selectedClassroomId,
+          subject: selectedSubjectId,
+          records
+        });
+      }
       setMessage({ type: 'success', text: 'Attendance saved successfully.' });
+      if (typeof onSaved === 'function') {
+        await onSaved();
+      }
       setTimeout(() => onClose(), 700);
     } catch (error) {
+      if (selectedSessionId) {
+        setMessage({ type: 'error', text: error.message || 'Failed to save session attendance.' });
+        setSaving(false);
+        return;
+      }
       // If already created for this day/class/subject, patch existing record.
       if (error.status === 409) {
         try {
@@ -158,6 +174,9 @@ export default function MarkAttendanceModal({ onClose, initialData }) {
           if (!record || !record._id) throw new Error('Existing attendance not found for patch.');
           await patch(`/api/teacher/update-attendance/${record._id}`, { records });
           setMessage({ type: 'success', text: 'Existing attendance updated for selected date.' });
+          if (typeof onSaved === 'function') {
+            await onSaved();
+          }
           setTimeout(() => onClose(), 700);
         } catch (patchError) {
           setMessage({ type: 'error', text: patchError.message || 'Failed to patch existing attendance.' });
@@ -197,11 +216,11 @@ export default function MarkAttendanceModal({ onClose, initialData }) {
         <div className="px-6 py-4 bg-sky-50/50 border-b border-sky-100 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Date</p>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg" />
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} disabled={!!selectedSessionId} className="w-full px-3 py-2 border border-slate-200 rounded-lg disabled:bg-slate-100 disabled:text-slate-500" />
           </div>
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Class</p>
-            <select value={selectedClassroomId} onChange={(e) => setSelectedClassroomId(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg">
+            <select value={selectedClassroomId} onChange={(e) => setSelectedClassroomId(e.target.value)} disabled={!!selectedSessionId} className="w-full px-3 py-2 border border-slate-200 rounded-lg disabled:bg-slate-100 disabled:text-slate-500">
               {classrooms.map((c) => (
                 <option key={c._id} value={c._id}>{c.name}{c.year ? ` (${c.year})` : ''}</option>
               ))}
@@ -209,7 +228,7 @@ export default function MarkAttendanceModal({ onClose, initialData }) {
           </div>
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Subject</p>
-            <select value={selectedSubjectId} onChange={(e) => setSelectedSubjectId(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg">
+            <select value={selectedSubjectId} onChange={(e) => setSelectedSubjectId(e.target.value)} disabled={!!selectedSessionId} className="w-full px-3 py-2 border border-slate-200 rounded-lg disabled:bg-slate-100 disabled:text-slate-500">
               {subjects.map((s) => (
                 <option key={s._id} value={s._id}>{s.name}{s.code ? ` (${s.code})` : ''}</option>
               ))}

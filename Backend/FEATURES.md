@@ -9,6 +9,7 @@ This document lists the features implemented in the Backend of the DIEMS Attenda
 - MongoDB persistence using Mongoose
 - JWT-based authentication and role-based authorization
 - Password hashing with `bcryptjs`
+- Frontend handoff notes for timetable and slot-based attendance in `FRONTEND_REMAINING.md`
 
 ## Authentication & Authorization
 
@@ -30,6 +31,16 @@ This document lists the features implemented in the Backend of the DIEMS Attenda
 - Update attendance by `attendanceId` (`PUT /api/teacher/update-attendance/:attendanceId`)
 - Retrieve teacher dashboard and recent attendance summaries (`GET /api/teacher/dashboard`)
 - Student attendance summary endpoint (`GET /api/student/attendance`) with subject breakdown and overall percentage
+
+## Timetable & Lecture Sessions
+
+- Timetable entries API for Admin/SuperAdmin (`POST /api/timetable/admin/entries`, `GET /api/timetable/admin/entries`)
+- Session generation for a date (`POST /api/timetable/admin/sessions/generate`)
+- Session listing (`GET /api/timetable/admin/sessions`)
+- Substitute teacher assignment per lecture session (`POST /api/timetable/admin/sessions/:sessionId/substitute`)
+- Teacher today schedule endpoint (`GET /api/timetable/teacher/today`)
+- Session-based attendance marking (`POST /api/timetable/teacher/sessions/:sessionId/attendance`)
+- Student lecture-wise attendance feed (`GET /api/timetable/student/my-lectures`)
 
 ## Notifications & Scheduled Jobs
 

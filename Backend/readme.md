@@ -18,8 +18,11 @@ Core capabilities:
 - Teacher attendance marking and updates
 - Student attendance viewing with subject-wise and overall percentage
 - Daily attendance alert emails when attendance falls below 75%
+- Timetable entry and lecture-session APIs (including substitution flow)
 - MongoDB persistence with Mongoose
 - Scheduled cron job for attendance monitoring
+
+Frontend handoff and pending UI integration notes are documented in `FRONTEND_REMAINING.md`.
 
 ## Tech Stack
 

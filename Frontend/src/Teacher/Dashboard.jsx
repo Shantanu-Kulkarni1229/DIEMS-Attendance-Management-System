@@ -12,8 +12,25 @@ export default function TeacherDashboard() {
   const [isFirstLogin, setIsFirstLogin] = useState(false);
   const [profile, setProfile] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);
+  const [todaySessions, setTodaySessions] = useState([]);
   const [showMarkAttendance, setShowMarkAttendance] = useState(false);
   const [selectedClass, setSelectedClass] = useState(null);
+
+  const refreshTeacherData = async () => {
+    try {
+      const data = await get('/api/teacher/dashboard');
+      setDashboardData(data || null);
+    } catch (error) {
+      setDashboardData(null);
+    }
+
+    try {
+      const sessions = await get('/api/timetable/teacher/today');
+      setTodaySessions(Array.isArray(sessions) ? sessions : []);
+    } catch (error) {
+      setTodaySessions([]);
+    }
+  };
 
   useEffect(() => {
     const loadMe = async () => {
@@ -25,12 +42,7 @@ export default function TeacherDashboard() {
         // no-op for now; login-protected routes will already gate access
       }
 
-      try {
-        const data = await get('/api/teacher/dashboard');
-        setDashboardData(data || null);
-      } catch (error) {
-        setDashboardData(null);
-      }
+      await refreshTeacherData();
     };
     loadMe();
   }, []);
@@ -64,7 +76,7 @@ export default function TeacherDashboard() {
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
           <div className="max-w-7xl mx-auto">
-            {currentPage === 'dashboard' && <Overview onMarkAttendance={handleMarkAttendance} profile={profile} dashboardData={dashboardData} />}
+            {currentPage === 'dashboard' && <Overview onMarkAttendance={handleMarkAttendance} profile={profile} dashboardData={dashboardData} todaySessions={todaySessions} />}
             {/* Placeholder for other pages */}
             {currentPage !== 'dashboard' && (
               <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400 bg-white/50 backdrop-blur-sm rounded-3xl border border-white/60 shadow-sm">
@@ -83,6 +95,7 @@ export default function TeacherDashboard() {
         <MarkAttendanceModal 
           onClose={() => setShowMarkAttendance(false)} 
           initialData={selectedClass} 
+          onSaved={refreshTeacherData}
         />
       )}
     </div>

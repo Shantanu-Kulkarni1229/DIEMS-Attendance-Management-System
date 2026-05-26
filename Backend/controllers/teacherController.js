@@ -34,6 +34,24 @@ exports.markAttendance = asyncHandler(async (req, res) => {
       res.status(403);
       throw new Error('Teacher is not assigned to this classroom');
     }
+
+    const assignedSubject = await Subject.findOne({ _id: subject, assignedTeacher: req.user._id }).select('_id');
+    if (!assignedSubject) {
+      res.status(403);
+      throw new Error('Teacher is not assigned to this subject');
+    }
+  }
+
+  // Ensure all students in payload belong to the selected classroom.
+  const uniqueStudentIds = [...new Set(records.map((r) => r.student.toString()))];
+  if (uniqueStudentIds.length !== records.length) {
+    res.status(400);
+    throw new Error('Duplicate student entries found in attendance records');
+  }
+  const studentsInClassroom = await Student.countDocuments({ _id: { $in: uniqueStudentIds }, classroom });
+  if (studentsInClassroom !== uniqueStudentIds.length) {
+    res.status(400);
+    throw new Error('One or more students do not belong to the selected classroom');
   }
 
   // create attendance; unique index prevents duplicates for same date/class/subject
@@ -75,6 +93,18 @@ exports.updateAttendance = asyncHandler(async (req, res) => {
     res.status(403);
     throw new Error('Forbidden');
   }
+
+  const uniqueStudentIds = [...new Set(records.map((r) => r.student.toString()))];
+  if (uniqueStudentIds.length !== records.length) {
+    res.status(400);
+    throw new Error('Duplicate student entries found in attendance records');
+  }
+  const studentsInClassroom = await Student.countDocuments({ _id: { $in: uniqueStudentIds }, classroom: attendance.classroom });
+  if (studentsInClassroom !== uniqueStudentIds.length) {
+    res.status(400);
+    throw new Error('One or more students do not belong to this attendance classroom');
+  }
+
   attendance.records = records;
   await attendance.save();
   await AttendanceService.recalculateForClassroom(attendance.classroom, attendance.subject);
@@ -97,6 +127,17 @@ exports.patchAttendance = asyncHandler(async (req, res) => {
   if (attendance.teacher.toString() !== req.user._id.toString() && req.user.role !== 'Admin' && req.user.role !== 'SuperAdmin') {
     res.status(403);
     throw new Error('Forbidden');
+  }
+
+  const uniqueStudentIds = [...new Set(records.map((r) => r.student.toString()))];
+  if (uniqueStudentIds.length !== records.length) {
+    res.status(400);
+    throw new Error('Duplicate student entries found in attendance records patch');
+  }
+  const studentsInClassroom = await Student.countDocuments({ _id: { $in: uniqueStudentIds }, classroom: attendance.classroom });
+  if (studentsInClassroom !== uniqueStudentIds.length) {
+    res.status(400);
+    throw new Error('One or more students do not belong to this attendance classroom');
   }
 
   // Merge incoming records: update matching student entries and append new ones
@@ -131,6 +172,7 @@ exports.getTeacherAttendanceRecords = asyncHandler(async (req, res) => {
   const query = req.user.role === 'Teacher' ? { teacher: teacherId } : {};
   if (req.query.classroom) query.classroom = req.query.classroom;
   if (req.query.subject) query.subject = req.query.subject;
+  if (req.query.lectureSession) query.lectureSession = req.query.lectureSession;
   if (req.query.date) {
     const day = new Date(req.query.date);
     const start = new Date(day);
@@ -144,6 +186,8 @@ exports.getTeacherAttendanceRecords = asyncHandler(async (req, res) => {
     .populate('classroom', 'name')
     .populate('subject', 'name code')
     .populate('teacher', 'name email')
+    .populate('lectureSession')
+    .populate('records.student', 'name rollNo prn className division')
     .sort({ date: -1 });
   res.status(200).json(records);
 });
