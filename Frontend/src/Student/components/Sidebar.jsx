@@ -1,4 +1,5 @@
 import React from 'react';
+import { logout } from '../../services/session';
 
 export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setSidebarOpen }) {
   const navItems = [

@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { patch } from '../../services/apiClient';
+import { logout } from '../../services/session';
 
 export default function PasswordSetupModal({ onClose }) {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -8,6 +10,8 @@ export default function PasswordSetupModal({ onClose }) {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   // Simple validation checks
   const hasMinLength = newPassword.length >= 8;
@@ -16,6 +20,25 @@ export default function PasswordSetupModal({ onClose }) {
   const hasSpecial = /[^A-Za-z0-9]/.test(newPassword);
   
   const isValid = hasMinLength && hasUpper && hasNumber && hasSpecial && (newPassword === confirmPassword) && newPassword.length > 0;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setErrorMessage('');
+    if (!isValid) return;
+
+    setIsSubmitting(true);
+    try {
+      await patch('/api/auth/change-password', {
+        currentPassword,
+        newPassword
+      });
+      onClose();
+    } catch (error) {
+      setErrorMessage(error.message || 'Failed to change password.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
@@ -37,7 +60,12 @@ export default function PasswordSetupModal({ onClose }) {
           </p>
         </div>
 
-        <form className="space-y-4 relative z-10" onSubmit={(e) => { e.preventDefault(); if (isValid) onClose(); }}>
+        <form className="space-y-4 relative z-10" onSubmit={handleSubmit}>
+          {errorMessage && (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+              {errorMessage}
+            </div>
+          )}
           
           {/* Current Password */}
           <div>
@@ -129,17 +157,18 @@ export default function PasswordSetupModal({ onClose }) {
           <div className="pt-4 flex flex-col gap-3">
             <button 
               type="submit"
-              disabled={!isValid}
+              disabled={!isValid || isSubmitting}
               className={`w-full py-3 rounded-xl font-bold text-sm transition-all ${
-                isValid 
+                isValid && !isSubmitting
                   ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20' 
                   : 'bg-slate-100 text-slate-400 cursor-not-allowed'
               }`}
             >
-              Continue to Dashboard
+              {isSubmitting ? 'Updating Password...' : 'Continue to Dashboard'}
             </button>
             <button 
               type="button"
+              onClick={logout}
               className="w-full py-3 rounded-xl font-semibold text-sm text-slate-500 hover:bg-slate-50 transition-colors"
             >
               Cancel & Logout

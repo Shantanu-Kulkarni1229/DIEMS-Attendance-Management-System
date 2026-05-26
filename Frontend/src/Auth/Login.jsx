@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import Illustration from './Illustration';
+import { post } from '../services/apiClient';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -7,8 +8,6 @@ export default function Login() {
   const [message, setMessage] = useState(null); // { type: 'error'|'success', text }
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-
-  const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -20,25 +19,10 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      const url = `${API_BASE}/api/auth/login`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
+      const body = await post('/api/auth/login', { email, password });
 
-      const ct = res.headers.get('content-type') || '';
-      let body = null;
-      try {
-        if (ct.includes('application/json')) body = await res.json();
-        else body = await res.text();
-      } catch (err) {
-        body = null;
-      }
-
-      if (!res.ok) {
-        const serverMsg = body && body.message ? body.message : (typeof body === 'string' ? body : null);
-        const raw = serverMsg || res.statusText || 'Login failed';
+      if (!body || !body.token) {
+        const raw = 'Login failed';
         const low = String(raw).toLowerCase();
         let friendly = 'Login failed. Please try again.';
         if (low.includes('invalid') || low.includes('credentials') || low.includes('unauthorized')) friendly = 'Invalid email or password.';
@@ -51,7 +35,8 @@ export default function Login() {
       }
 
       // success
-      if (body && body.token) localStorage.setItem('token', body.token);
+      localStorage.setItem('token', body.token);
+      if (body.user) localStorage.setItem('user', JSON.stringify(body.user));
       const role = body && body.user && body.user.role ? String(body.user.role).toLowerCase() : null;
       setMessage({ type: 'success', text: 'Login successful — redirecting...' });
       setTimeout(() => {

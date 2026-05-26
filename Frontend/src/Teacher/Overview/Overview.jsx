@@ -1,20 +1,21 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { get, patch } from '../../services/apiClient';
 
-const stats = [
+const fallbackStats = [
   { title: "Today's Classes", value: "4", subtitle: "Scheduled", icon: "📅", color: "text-blue-600", bg: "bg-blue-50" },
   { title: "Total Students", value: "186", subtitle: "Across all classes", icon: "👥", color: "text-emerald-600", bg: "bg-emerald-50" },
   { title: "Attendance Marked", value: "2", subtitle: "Classes Completed", icon: "✅", color: "text-purple-600", bg: "bg-purple-50" },
   { title: "Pending Classes", value: "2", subtitle: "To Mark", icon: "🕒", color: "text-orange-600", bg: "bg-orange-50" },
 ];
 
-const schedule = [
+const fallbackSchedule = [
   { time: "09:00 AM - 10:00 AM", subject: "ML (Theory)", class: "SYA", status: "Completed" },
   { time: "11:00 AM - 12:00 PM", subject: "CN (Theory)", class: "TYB", status: "Pending" },
   { time: "01:00 PM - 02:00 PM", subject: "IOT (Theory)", class: "SYB", status: "Pending" },
   { time: "03:00 PM - 04:00 PM", subject: "CD (Theory)", class: "FE-A", status: "Pending" },
 ];
 
-const leaveRequests = [
+const leaveRequestsFallback = [
   { initials: "AS", name: "Aniket Shinde", classInfo: "SYA - ML (Theory)", date: "21 May 2025", duration: "Full Day", color: "bg-blue-100 text-blue-700" },
   { initials: "PR", name: "Prajakta Rajput", classInfo: "TYB - CN (Theory)", date: "22 May 2025", duration: "1st Half", color: "bg-purple-100 text-purple-700" },
   { initials: "SK", name: "Sahil Kale", classInfo: "SYB - IOT (Theory)", date: "23 May 2025", duration: "Full Day", color: "bg-orange-100 text-orange-700" },
@@ -37,21 +38,87 @@ const weeklyOverview = [
   { day: "Sun", date: "25 May", fraction: "-", status: "No Classes", color: "text-slate-400" },
 ];
 
-export default function Overview({ onMarkAttendance }) {
+const buildTeacherStats = (dashboardData) => {
+  const assignedSubjects = Array.isArray(dashboardData?.assignedSubjects) ? dashboardData.assignedSubjects : [];
+  const attendanceRecords = Array.isArray(dashboardData?.attendanceRecords) ? dashboardData.attendanceRecords : [];
+  const assignedClassrooms = Array.isArray(dashboardData?.teacher?.assignedClassrooms) ? dashboardData.teacher.assignedClassrooms : [];
+
+  if (!assignedSubjects.length && !attendanceRecords.length && !assignedClassrooms.length) {
+    return fallbackStats;
+  }
+
+  const recentMarked = attendanceRecords.filter((record) => !!record?.records?.length).length;
+  const pendingToMark = Math.max(assignedClassrooms.length - recentMarked, 0);
+
+  return [
+    { title: 'Assigned Classes', value: String(assignedClassrooms.length), subtitle: 'From your profile', icon: '🏫', color: 'text-blue-600', bg: 'bg-blue-50' },
+    { title: 'Teaching Subjects', value: String(assignedSubjects.length), subtitle: 'Live backend data', icon: '📚', color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { title: 'Recent Attendance', value: String(attendanceRecords.length), subtitle: 'Latest records', icon: '🧾', color: 'text-purple-600', bg: 'bg-purple-50' },
+    { title: 'Pending Classes', value: String(pendingToMark), subtitle: 'Based on recent activity', icon: '🕒', color: 'text-orange-600', bg: 'bg-orange-50' },
+  ];
+};
+
+const buildScheduleItems = (dashboardData) => {
+  const attendanceRecords = Array.isArray(dashboardData?.attendanceRecords) ? dashboardData.attendanceRecords : [];
+  if (!attendanceRecords.length) return fallbackSchedule;
+
+  return attendanceRecords.slice(0, 4).map((record, index) => {
+    const presentCount = Array.isArray(record.records) ? record.records.filter((entry) => entry.status === 'present').length : 0;
+    const totalCount = Array.isArray(record.records) ? record.records.length : 0;
+    return {
+      time: record.date ? new Date(record.date).toLocaleDateString() : `Record ${index + 1}`,
+      subject: record.subject?.name ? `${record.subject.name}${record.subject.code ? ` (${record.subject.code})` : ''}` : 'Attendance record',
+      class: record.classroom?.name || 'Classroom',
+      status: totalCount ? `Marked ${presentCount}/${totalCount}` : 'Marked'
+    };
+  });
+};
+
+export default function Overview({ onMarkAttendance, profile, dashboardData }) {
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [leaveMessage, setLeaveMessage] = useState('');
+  const statsToShow = buildTeacherStats(dashboardData);
+  const scheduleItems = buildScheduleItems(dashboardData);
+  const leaveItems = leaveRequests.length ? leaveRequests : leaveRequestsFallback;
+
+  useEffect(() => {
+    const loadLeaves = async () => {
+      try {
+        const data = await get('/api/teacher/leave-requests');
+        setLeaveRequests(Array.isArray(data) ? data : []);
+      } catch (error) {
+        setLeaveRequests([]);
+      }
+    };
+    loadLeaves();
+  }, []);
+
+  const handleLeaveAction = async (leaveId, status) => {
+    setLeaveMessage('');
+    try {
+      await patch(`/api/teacher/leave-requests/${leaveId}`, { status });
+      const data = await get('/api/teacher/leave-requests');
+      setLeaveRequests(Array.isArray(data) ? data : []);
+      setLeaveMessage(`Leave ${status.toLowerCase()} successfully.`);
+    } catch (error) {
+      setLeaveMessage(error.message || 'Failed to update leave request.');
+    }
+  };
+
   return (
     <div className="space-y-6">
       
       {/* Top Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-          Good Morning, Prof. Rahul Patil <span className="text-2xl animate-wave origin-bottom-right">👋</span>
+          Good Morning, {profile?.name || 'Teacher'} <span className="text-2xl animate-wave origin-bottom-right">👋</span>
         </h1>
         <p className="text-slate-500 mt-1">Here's what's happening with your classes today.</p>
       </div>
 
       {/* Summary Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, i) => (
+        {statsToShow.map((stat, i) => (
           <div key={i} className="bg-white/80 backdrop-blur rounded-2xl p-6 border border-white shadow-sm hover:shadow-md transition-all flex items-start gap-4 group">
             <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl ${stat.bg} ${stat.color} group-hover:scale-110 transition-transform`}>
               {stat.icon}
@@ -75,7 +142,7 @@ export default function Overview({ onMarkAttendance }) {
           </div>
 
           <div className="space-y-4">
-            {schedule.map((item, i) => (
+            {scheduleItems.map((item, i) => (
               <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 hover:border-slate-200 transition-colors gap-4">
                 <div className="flex items-center gap-6">
                   <div className="w-32">
@@ -124,26 +191,32 @@ export default function Overview({ onMarkAttendance }) {
             <button className="text-sm font-semibold text-blue-600 hover:text-blue-700">View All</button>
           </div>
 
+          {leaveMessage && (
+            <div className="mb-4 text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+              {leaveMessage}
+            </div>
+          )}
+
           <div className="flex-1 space-y-4">
-            {leaveRequests.map((req, i) => (
+            {leaveItems.map((req, i) => (
               <div key={i} className="flex items-start gap-4 pb-4 border-b border-slate-100 last:border-0 last:pb-0">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${req.color}`}>
-                  {req.initials}
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${req.color || 'bg-slate-100 text-slate-700'}`}>
+                  {req.initials || String(req.student?.name || req.name || 'L').slice(0, 2).toUpperCase()}
                 </div>
                 <div className="flex-1">
-                  <h4 className="text-sm font-bold text-slate-800">{req.name}</h4>
-                  <p className="text-xs text-slate-500 mt-0.5">{req.classInfo}</p>
+                  <h4 className="text-sm font-bold text-slate-800">{req.student?.name || req.name}</h4>
+                  <p className="text-xs text-slate-500 mt-0.5">{req.classroom?.name || req.classInfo}</p>
                 </div>
                 <div className="text-right flex flex-col items-end gap-2">
                   <div>
-                    <p className="text-xs font-semibold text-slate-700">{req.date}</p>
-                    <p className="text-[10px] text-slate-500">{req.duration}</p>
+                    <p className="text-xs font-semibold text-slate-700">{req.createdAt ? new Date(req.createdAt).toLocaleDateString() : req.date}</p>
+                    <p className="text-[10px] text-slate-500">{req.duration || req.status}</p>
                   </div>
                   <div className="flex items-center gap-1">
-                    <button className="w-7 h-7 rounded border border-emerald-200 text-emerald-600 hover:bg-emerald-50 flex items-center justify-center transition-colors">
+                    <button type="button" onClick={() => handleLeaveAction(req._id, 'Approved')} className="w-7 h-7 rounded border border-emerald-200 text-emerald-600 hover:bg-emerald-50 flex items-center justify-center transition-colors">
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                     </button>
-                    <button className="w-7 h-7 rounded border border-red-200 text-red-600 hover:bg-red-50 flex items-center justify-center transition-colors">
+                    <button type="button" onClick={() => handleLeaveAction(req._id, 'Rejected')} className="w-7 h-7 rounded border border-red-200 text-red-600 hover:bg-red-50 flex items-center justify-center transition-colors">
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                   </div>

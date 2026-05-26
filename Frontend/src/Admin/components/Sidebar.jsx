@@ -1,3 +1,5 @@
+import { logout } from '../../services/session';
+
 export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setSidebarOpen }) {
   const navItems = [
     { id: 'overview', label: 'Overview', icon: 'dashboard' },
@@ -93,7 +95,7 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
 
       {/* Logout */}
       <div className="p-4 border-t border-sky-100">
-        <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-red-50 hover:text-red-600 transition-all duration-200">
+        <button type="button" onClick={logout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-600 hover:bg-red-50 hover:text-red-600 transition-all duration-200">
           <span className="flex-shrink-0">{getIcon('logout')}</span>
           <span className="text-sm font-medium">Logout</span>
         </button>

@@ -1,6 +1,16 @@
 import React from 'react';
 
-export default function Navbar({ setSidebarOpen, sidebarOpen }) {
+export default function Navbar({ setSidebarOpen, sidebarOpen, profile }) {
+  const displayName = profile?.name || 'Teacher';
+  const displayRole = profile?.role || 'Faculty';
+  const initials = String(displayName || 'T')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase() || 'T';
+
   return (
     <header className="sticky top-0 z-20 bg-white/70 backdrop-blur-xl border-b border-white/60 shadow-[0_4px_24px_rgba(0,0,0,0.02)] px-4 md:px-8 py-4">
       <div className="flex items-center justify-between">
@@ -39,11 +49,11 @@ export default function Navbar({ setSidebarOpen, sidebarOpen }) {
 
           <div className="flex items-center gap-3 pl-4 md:border-l border-slate-200 cursor-pointer group">
             <div className="hidden md:block text-right">
-              <p className="text-sm font-bold text-slate-800 leading-none">Prof. Rahul Patil</p>
-              <p className="text-[11px] text-slate-500 font-medium mt-1">Faculty</p>
+              <p className="text-sm font-bold text-slate-800 leading-none">{displayName}</p>
+              <p className="text-[11px] text-slate-500 font-medium mt-1">{displayRole}</p>
             </div>
             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold shadow-md ring-2 ring-white group-hover:shadow-lg transition-shadow">
-              RP
+              {initials}
             </div>
             <svg className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors hidden md:block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />

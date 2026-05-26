@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { patch } from '../../services/apiClient';
+import { logout } from '../../services/session';
 
 export default function PasswordSetupModal({ onClose }) {
   const [currentPassword, setCurrentPassword] = useState('');
@@ -9,6 +11,8 @@ export default function PasswordSetupModal({ onClose }) {
   const [showNew, setShowNew] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   // Simple validation checks
   const hasMinLength = newPassword.length >= 8;
@@ -18,13 +22,25 @@ export default function PasswordSetupModal({ onClose }) {
   
   const isValid = hasMinLength && hasUpper && hasNumber && hasSpecial && (newPassword === confirmPassword) && newPassword.length > 0;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isValid) {
+    setErrorMessage('');
+    if (!isValid) return;
+
+    setIsSubmitting(true);
+    try {
+      await patch('/api/auth/change-password', {
+        currentPassword,
+        newPassword
+      });
       setIsSuccess(true);
       setTimeout(() => {
         onClose();
-      }, 1500);
+      }, 1200);
+    } catch (error) {
+      setErrorMessage(error.message || 'Failed to change password.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -51,6 +67,11 @@ export default function PasswordSetupModal({ onClose }) {
             </div>
 
             <form className="space-y-4 relative z-10" onSubmit={handleSubmit}>
+              {errorMessage && (
+                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  {errorMessage}
+                </div>
+              )}
               
               {/* Current Password */}
               <div>
@@ -141,17 +162,22 @@ export default function PasswordSetupModal({ onClose }) {
               <div className="pt-4 flex flex-col gap-3">
                 <button 
                   type="submit"
-                  disabled={!isValid}
+                  disabled={!isValid || isSubmitting}
                   className={`w-full py-3 rounded-xl font-bold text-sm transition-all ${
-                    isValid 
+                    isValid && !isSubmitting
                       ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-600/20' 
                       : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                   }`}
                 >
-                  Continue to Dashboard
+                  {isSubmitting ? 'Updating Password...' : 'Continue to Dashboard'}
                 </button>
                 <button 
                   type="button"
+                  onClick={() => {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    window.location.href = '/';
+                  }}
                   className="w-full py-3 rounded-xl font-semibold text-sm text-slate-500 hover:bg-slate-50 transition-colors"
                 >
                   Logout

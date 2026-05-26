@@ -1,6 +1,21 @@
 const express = require('express');
 const router = express.Router();
-const { createAdmin, createTeacher, createStudent, assignTeacherToSubject, getTeachers, getStudents, getClassrooms, getSubjects } = require('../controllers/adminController');
+const {
+	createAdmin,
+	createTeacher,
+	createStudent,
+	assignTeacherToSubject,
+	getTeachers,
+	getStudents,
+	getClassrooms,
+	getSubjects,
+	getOverviewStats,
+	getReports,
+	updateTeacher,
+	deleteTeacher,
+	updateStudent,
+	deleteStudent
+} = require('../controllers/adminController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorizeRoles } = require('../middleware/roleMiddleware');
 
@@ -14,7 +29,13 @@ router.post('/assign-teacher-subject', protect, authorizeRoles('SuperAdmin', 'Ad
 
 // Get resources
 router.get('/teachers', protect, authorizeRoles('SuperAdmin', 'Admin'), getTeachers);
+router.patch('/teachers/:teacherId', protect, authorizeRoles('SuperAdmin', 'Admin'), updateTeacher);
+router.delete('/teachers/:teacherId', protect, authorizeRoles('SuperAdmin', 'Admin'), deleteTeacher);
 router.get('/students', protect, authorizeRoles('SuperAdmin', 'Admin'), getStudents);
+router.patch('/students/:studentId', protect, authorizeRoles('SuperAdmin', 'Admin'), updateStudent);
+router.delete('/students/:studentId', protect, authorizeRoles('SuperAdmin', 'Admin'), deleteStudent);
+router.get('/overview-stats', protect, authorizeRoles('SuperAdmin', 'Admin'), getOverviewStats);
+router.get('/reports', protect, authorizeRoles('SuperAdmin', 'Admin'), getReports);
 router.get('/classrooms', protect, authorizeRoles('SuperAdmin', 'Admin', 'Teacher', 'Student'), getClassrooms);
 router.get('/subjects', protect, authorizeRoles('SuperAdmin', 'Admin', 'Teacher', 'Student'), getSubjects);
 

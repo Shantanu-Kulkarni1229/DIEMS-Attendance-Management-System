@@ -1,16 +1,39 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import Overview from './Overview/Overview';
 import PasswordSetupModal from './components/PasswordSetupModal';
 import MarkAttendanceModal from './components/MarkAttendanceModal';
+import { get } from '../services/apiClient';
 
 export default function TeacherDashboard() {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [isFirstLogin, setIsFirstLogin] = useState(true); // Set to true to show the setup screen
+  const [isFirstLogin, setIsFirstLogin] = useState(false);
+  const [profile, setProfile] = useState(null);
+  const [dashboardData, setDashboardData] = useState(null);
   const [showMarkAttendance, setShowMarkAttendance] = useState(false);
   const [selectedClass, setSelectedClass] = useState(null);
+
+  useEffect(() => {
+    const loadMe = async () => {
+      try {
+        const me = await get('/api/auth/me');
+        setProfile(me?.user || null);
+        setIsFirstLogin(!!(me && me.user && me.user.mustChangePassword));
+      } catch (error) {
+        // no-op for now; login-protected routes will already gate access
+      }
+
+      try {
+        const data = await get('/api/teacher/dashboard');
+        setDashboardData(data || null);
+      } catch (error) {
+        setDashboardData(null);
+      }
+    };
+    loadMe();
+  }, []);
 
   const handleMarkAttendance = (classItem = null) => {
     setSelectedClass(classItem);
@@ -32,15 +55,16 @@ export default function TeacherDashboard() {
         sidebarOpen={sidebarOpen} 
         setSidebarOpen={setSidebarOpen} 
         onMarkAttendanceClick={() => handleMarkAttendance(null)}
+        profile={profile}
       />
 
       {/* Main Content */}
       <div className={`flex-1 flex flex-col transition-all duration-300 relative z-10 w-full lg:w-auto`}>
-        <Navbar setSidebarOpen={setSidebarOpen} sidebarOpen={sidebarOpen} />
+        <Navbar setSidebarOpen={setSidebarOpen} sidebarOpen={sidebarOpen} profile={profile} />
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
           <div className="max-w-7xl mx-auto">
-            {currentPage === 'dashboard' && <Overview onMarkAttendance={handleMarkAttendance} />}
+            {currentPage === 'dashboard' && <Overview onMarkAttendance={handleMarkAttendance} profile={profile} dashboardData={dashboardData} />}
             {/* Placeholder for other pages */}
             {currentPage !== 'dashboard' && (
               <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400 bg-white/50 backdrop-blur-sm rounded-3xl border border-white/60 shadow-sm">

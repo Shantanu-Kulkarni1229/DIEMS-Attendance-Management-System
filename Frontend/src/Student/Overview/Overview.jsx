@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { get, post } from '../../services/apiClient';
 
-const subjects = [
+const defaultSubjects = [
   { name: 'Machine Learning (ML)', classes: 30, present: 26, absent: 4, percentage: 86.7, status: 'Good' },
   { name: 'Computer Networks (CN)', classes: 28, present: 21, absent: 7, percentage: 75.0, status: 'Good' },
   { name: 'Data Communication (DC)', classes: 28, present: 17, absent: 11, percentage: 60.7, status: 'Average' },
@@ -26,16 +27,82 @@ const getStatusTextColor = (status) => {
   return 'text-red-600';
 };
 
-export default function Overview() {
+export default function Overview({ attendanceData, loading, error, profile }) {
+  const user = profile || JSON.parse(localStorage.getItem('user') || '{}');
+  const overall = attendanceData?.attendance?.overall;
+  const apiSubjects = attendanceData?.attendance?.subjects;
+  const [leaveForm, setLeaveForm] = useState({ leaveType: 'Sick Leave', fromDate: '', toDate: '', reason: '' });
+  const [leaveHistory, setLeaveHistory] = useState([]);
+  const [leaveMessage, setLeaveMessage] = useState('');
+  const [leaveLoading, setLeaveLoading] = useState(false);
+
+  useEffect(() => {
+    const loadLeaves = async () => {
+      try {
+        const data = await get('/api/student/leaves');
+        setLeaveHistory(Array.isArray(data) ? data : []);
+      } catch (err) {
+        setLeaveHistory([]);
+      }
+    };
+    loadLeaves();
+  }, []);
+
+  const total = overall?.total || 0;
+  const present = overall?.present || 0;
+  const absent = Math.max(0, total - present);
+  const overallPercentage = typeof overall?.percentage === 'number' ? overall.percentage : 0;
+
+  const status = overallPercentage >= 75 ? 'Good' : overallPercentage >= 60 ? 'Average' : 'Low';
+  const tableSubjects = Array.isArray(apiSubjects) && apiSubjects.length
+    ? apiSubjects.map((s) => ({
+      name: s.subject,
+      classes: s.total,
+      present: s.present,
+      absent: Math.max(0, s.total - s.present),
+      percentage: s.percentage,
+      status: s.percentage >= 75 ? 'Good' : s.percentage >= 60 ? 'Average' : 'Low'
+    }))
+    : defaultSubjects;
+
+  const handleLeaveSubmit = async (e) => {
+    e.preventDefault();
+    setLeaveMessage('');
+    if (!leaveForm.fromDate || !leaveForm.toDate) {
+      setLeaveMessage('Please select from and to dates.');
+      return;
+    }
+
+    setLeaveLoading(true);
+    try {
+      await post('/api/student/leaves', {
+        fromDate: leaveForm.fromDate,
+        toDate: leaveForm.toDate,
+        duration: leaveForm.leaveType,
+        reason: leaveForm.reason
+      });
+      setLeaveMessage('Leave request submitted successfully.');
+      setLeaveForm({ leaveType: 'Sick Leave', fromDate: '', toDate: '', reason: '' });
+      const updated = await get('/api/student/leaves');
+      setLeaveHistory(Array.isArray(updated) ? updated : []);
+    } catch (err) {
+      setLeaveMessage(err.message || 'Failed to submit leave request.');
+    } finally {
+      setLeaveLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       
       {/* Top Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-          Welcome back, Aniket Shinde <span className="text-2xl animate-wave origin-bottom-right">👋</span>
+          Welcome back, {user.name || 'Student'} <span className="text-2xl animate-wave origin-bottom-right">👋</span>
         </h1>
         <p className="text-slate-500 mt-1">Here's your attendance overview and academic snapshot.</p>
+        {loading && <p className="text-sm text-slate-500 mt-2">Loading attendance data...</p>}
+        {!loading && error && <p className="text-sm text-red-600 mt-2">{error}</p>}
       </div>
 
       {/* Top Analytics Cards */}
@@ -48,14 +115,14 @@ export default function Overview() {
           <div className="relative w-32 h-32 mt-6 mb-4 group-hover:scale-105 transition-transform">
             <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
               <circle cx="50" cy="50" r="40" fill="transparent" stroke="#f1f5f9" strokeWidth="8" />
-              <circle cx="50" cy="50" r="40" fill="transparent" stroke="#10b981" strokeWidth="8" strokeDasharray="251.2" strokeDashoffset={251.2 - (251.2 * 0.826)} strokeLinecap="round" className="transition-all duration-1000 ease-out" />
+              <circle cx="50" cy="50" r="40" fill="transparent" stroke="#10b981" strokeWidth="8" strokeDasharray="251.2" strokeDashoffset={251.2 - (251.2 * (overallPercentage / 100 || 0))} strokeLinecap="round" className="transition-all duration-1000 ease-out" />
             </svg>
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-2xl font-bold text-slate-800">82.6%</span>
+              <span className="text-2xl font-bold text-slate-800">{overallPercentage.toFixed(1)}%</span>
             </div>
           </div>
           
-          <h4 className="font-bold text-emerald-600">Good</h4>
+          <h4 className={`font-bold ${getStatusTextColor(status)}`}>{status}</h4>
           <p className="text-xs text-slate-500 mt-1">You are maintaining<br/>excellent attendance!</p>
         </div>
 
@@ -66,18 +133,18 @@ export default function Overview() {
           </div>
           <p className="text-sm font-bold text-slate-700 text-center md:text-left">Total Classes</p>
           <div className="mt-2 text-center md:text-left">
-            <h3 className="text-3xl font-bold text-slate-800">120</h3>
+            <h3 className="text-3xl font-bold text-slate-800">{total}</h3>
             <p className="text-xs font-medium text-slate-500 mt-0.5">Classes Conducted</p>
           </div>
           
           <div className="mt-6 flex justify-between pt-4 border-t border-slate-100">
             <div className="text-center">
               <p className="text-xs font-semibold text-slate-500 mb-1">Present</p>
-              <p className="text-lg font-bold text-slate-800">99</p>
+              <p className="text-lg font-bold text-slate-800">{present}</p>
             </div>
             <div className="text-center">
               <p className="text-xs font-semibold text-slate-500 mb-1">Absent</p>
-              <p className="text-lg font-bold text-red-500">21</p>
+              <p className="text-lg font-bold text-red-500">{absent}</p>
             </div>
           </div>
         </div>
@@ -121,7 +188,7 @@ export default function Overview() {
             </svg>
           </div>
           
-          <h3 className="text-xl font-bold text-emerald-600 mb-2">Good Standing</h3>
+          <h3 className={`text-xl font-bold mb-2 ${getStatusTextColor(status)}`}>{status} Standing</h3>
           <p className="text-xs text-slate-500 px-4 leading-relaxed">
             Keep it up! You are above the required 75%.
           </p>
@@ -151,7 +218,7 @@ export default function Overview() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {subjects.map((sub, i) => (
+                {tableSubjects.map((sub, i) => (
                   <tr key={i} className="hover:bg-slate-50/50 transition-colors group">
                     <td className="py-4 font-semibold text-slate-700">{sub.name}</td>
                     <td className="py-4 text-center text-slate-600">{sub.classes}</td>
@@ -245,11 +312,16 @@ export default function Overview() {
               </svg>
             </div>
             
-            <form className="flex-1 space-y-4">
+            <form className="flex-1 space-y-4" onSubmit={handleLeaveSubmit}>
+              {leaveMessage && (
+                <div className="text-sm px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-700">
+                  {leaveMessage}
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5">Leave Type</label>
-                  <select className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-700 appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M5%208l5%205%205-5%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[position:right_0.5rem_center]">
+                  <select value={leaveForm.leaveType} onChange={(e) => setLeaveForm((prev) => ({ ...prev, leaveType: e.target.value }))} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-700 appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M5%208l5%205%205-5%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[position:right_0.5rem_center]">
                     <option>Select Leave Type</option>
                     <option>Sick Leave</option>
                     <option>Medical Leave</option>
@@ -259,22 +331,22 @@ export default function Overview() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5">From Date</label>
-                  <input type="date" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-700" />
+                  <input value={leaveForm.fromDate} onChange={(e) => setLeaveForm((prev) => ({ ...prev, fromDate: e.target.value }))} type="date" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-700" />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5">To Date</label>
-                  <input type="date" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-700" />
+                  <input value={leaveForm.toDate} onChange={(e) => setLeaveForm((prev) => ({ ...prev, toDate: e.target.value }))} type="date" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-700" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5">Reason</label>
-                <textarea rows="2" placeholder="Enter reason for leave..." className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-700 resize-none"></textarea>
+                <textarea value={leaveForm.reason} onChange={(e) => setLeaveForm((prev) => ({ ...prev, reason: e.target.value }))} rows="2" placeholder="Enter reason for leave..." className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-700 resize-none"></textarea>
               </div>
               
               <div className="flex justify-end pt-2">
-                <button type="button" className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-semibold text-sm rounded-lg shadow-lg shadow-blue-500/30 transition-all active:scale-95">
-                  Submit Leave Request
+                <button type="submit" disabled={leaveLoading} className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-semibold text-sm rounded-lg shadow-lg shadow-blue-500/30 transition-all active:scale-95 disabled:opacity-70">
+                  {leaveLoading ? 'Submitting...' : 'Submit Leave Request'}
                 </button>
               </div>
             </form>
@@ -289,23 +361,23 @@ export default function Overview() {
           </div>
 
           <div className="flex-1 space-y-4">
-            {recentLeaves.map((leave, i) => (
+            {(leaveHistory.length ? leaveHistory : recentLeaves).map((leave, i) => (
               <div key={i} className="flex items-start gap-4 pb-4 border-b border-slate-100 last:border-0 last:pb-0 hover:bg-slate-50/50 p-2 -mx-2 rounded-xl transition-colors">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${leave.color} shadow-sm`}>
-                  {leave.initials}
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${leave.color || 'bg-slate-100 text-slate-700'} shadow-sm`}>
+                  {leave.initials || String(leave.student?.name || leave.name || 'A').slice(0, 2).toUpperCase()}
                 </div>
                 <div className="flex-1">
-                  <h4 className="text-sm font-bold text-slate-800">{leave.name}</h4>
-                  <p className="text-xs font-medium text-slate-500 mt-0.5">{leave.type}</p>
+                  <h4 className="text-sm font-bold text-slate-800">{leave.student?.name || leave.name}</h4>
+                  <p className="text-xs font-medium text-slate-500 mt-0.5">{leave.reason || leave.type}</p>
                 </div>
                 <div className="text-right flex flex-col items-end gap-1.5">
                   <div>
-                    <p className="text-xs font-bold text-slate-700">{leave.date}</p>
-                    <p className="text-[10px] text-slate-400">{leave.duration}</p>
+                    <p className="text-xs font-bold text-slate-700">{leave.createdAt ? new Date(leave.createdAt).toLocaleDateString() : leave.date}</p>
+                    <p className="text-[10px] text-slate-400">{leave.duration || leave.status}</p>
                   </div>
                   <span className={`inline-block px-3 py-0.5 rounded-full text-[10px] font-bold border ${
-                    leave.status === 'Approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
-                    leave.status === 'Pending' ? 'bg-orange-50 text-orange-600 border-orange-200' :
+                    String(leave.status).toLowerCase() === 'approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
+                    String(leave.status).toLowerCase() === 'pending' ? 'bg-orange-50 text-orange-600 border-orange-200' :
                     'bg-red-50 text-red-600 border-red-200'
                   }`}>
                     {leave.status}

@@ -6,6 +6,8 @@ const StudentSchema = new mongoose.Schema({
   rollNo: { type: String, required: true, trim: true },
   className: { type: String, required: true, trim: true },
   division: { type: String, required: true, trim: true, uppercase: true },
+  phone: { type: String, trim: true },
+  parentEmail: { type: String, trim: true, lowercase: true },
   classroom: { type: mongoose.Schema.Types.ObjectId, ref: 'Classroom' }
 });
 

@@ -6,6 +6,7 @@ const UserSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true, lowercase: true },
   password: { type: String, required: true },
+  mustChangePassword: { type: Boolean, default: false },
   branch: { type: String, enum: branches },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
 }, {

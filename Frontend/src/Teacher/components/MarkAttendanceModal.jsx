@@ -1,64 +1,185 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { get, patch, post } from '../../services/apiClient';
 
-const mockStudents = [
-  { roll: '01', name: 'Aniket Shinde', present: true },
-  { roll: '02', name: 'Prajakta Rajput', present: true },
-  { roll: '03', name: 'Sahil Kale', present: true },
-  { roll: '04', name: 'Neha Sharma', present: true },
-  { roll: '05', name: 'Rahul Verma', present: true },
-  { roll: '06', name: 'Sneha Patil', present: true },
-  { roll: '07', name: 'Vikas Kumar', present: true },
-  { roll: '08', name: 'Priya Singh', present: true },
-  { roll: '09', name: 'Amit Desai', present: true },
-  { roll: '10', name: 'Pooja Joshi', present: true },
-];
+const toInputDate = (date = new Date()) => {
+  const d = new Date(date);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
 
 export default function MarkAttendanceModal({ onClose, initialData }) {
-  const [students, setStudents] = useState(mockStudents);
+  const [classrooms, setClassrooms] = useState([]);
+  const [subjects, setSubjects] = useState([]);
+  const [students, setStudents] = useState([]);
   const [absentInput, setAbsentInput] = useState('');
   const [highlightedRows, setHighlightedRows] = useState([]);
+  const [selectedClassroomId, setSelectedClassroomId] = useState('');
+  const [selectedSubjectId, setSelectedSubjectId] = useState('');
+  const [date, setDate] = useState(toInputDate());
+  const [message, setMessage] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  // Derive initial values from initialData if present
-  const [date] = useState(initialData ? '21 May 2025' : '');
-  const [time] = useState(initialData ? initialData.time : '');
-  const [subject] = useState(initialData ? initialData.subject : '');
-  const [className] = useState(initialData ? initialData.class : '');
+  useEffect(() => {
+    const loadInit = async () => {
+      try {
+        const [classroomData, subjectData] = await Promise.all([
+          get('/api/admin/classrooms'),
+          get('/api/admin/subjects')
+        ]);
 
-  const toggleAttendance = (roll) => {
-    setStudents(students.map(s => s.roll === roll ? { ...s, present: !s.present } : s));
-    setHighlightedRows(highlightedRows.filter(r => r !== roll)); // Remove highlight if manually toggled
+        const classes = Array.isArray(classroomData) ? classroomData : [];
+        const subs = Array.isArray(subjectData) ? subjectData : [];
+        setClassrooms(classes);
+        setSubjects(subs);
+
+        if (classes[0]) setSelectedClassroomId(classes[0]._id);
+        if (subs[0]) setSelectedSubjectId(subs[0]._id);
+
+        // Best-effort preselect based on schedule card text
+        if (initialData && initialData.class) {
+          const byName = classes.find((c) => String(c.name).toLowerCase() === String(initialData.class).toLowerCase());
+          if (byName) setSelectedClassroomId(byName._id);
+        }
+        if (initialData && initialData.subject) {
+          const clean = String(initialData.subject || '').split('(')[0].trim().toLowerCase();
+          const bySubject = subs.find((s) => String(s.name).trim().toLowerCase() === clean);
+          if (bySubject) setSelectedSubjectId(bySubject._id);
+        }
+      } catch (error) {
+        setMessage({ type: 'error', text: error.message || 'Failed to load classes/subjects.' });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadInit();
+  }, [initialData]);
+
+  useEffect(() => {
+    const loadStudents = async () => {
+      if (!selectedClassroomId) {
+        setStudents([]);
+        return;
+      }
+      try {
+        const data = await get(`/api/teacher/classrooms/${selectedClassroomId}/students`);
+        const mapped = (Array.isArray(data) ? data : []).map((s) => ({
+          id: s._id,
+          roll: s.rollNo || s.prn || String(s._id).slice(-4),
+          name: s.name,
+          present: true
+        }));
+        setStudents(mapped);
+      } catch (error) {
+        setMessage({ type: 'error', text: error.message || 'Failed to load students.' });
+      }
+    };
+
+    loadStudents();
+  }, [selectedClassroomId]);
+
+  const selectedClassroom = useMemo(
+    () => classrooms.find((c) => c._id === selectedClassroomId),
+    [classrooms, selectedClassroomId]
+  );
+
+  const selectedSubject = useMemo(
+    () => subjects.find((s) => s._id === selectedSubjectId),
+    [subjects, selectedSubjectId]
+  );
+
+  const toggleAttendance = (studentId) => {
+    setStudents((prev) => prev.map((s) => (s.id === studentId ? { ...s, present: !s.present } : s)));
+    setHighlightedRows((prev) => prev.filter((r) => r !== studentId));
   };
 
   const applyAbsentees = () => {
     const rollsToMarkAbsent = absentInput
       .split(',')
-      .map(s => s.trim())
-      .filter(s => s);
+      .map((s) => s.trim())
+      .filter(Boolean);
 
-    if (rollsToMarkAbsent.length > 0) {
-      setStudents(students.map(s => {
-        if (rollsToMarkAbsent.includes(s.roll)) {
+    if (rollsToMarkAbsent.length === 0) return;
+
+    const toHighlight = [];
+    setStudents((prev) =>
+      prev.map((s) => {
+        if (rollsToMarkAbsent.includes(String(s.roll))) {
+          toHighlight.push(s.id);
           return { ...s, present: false };
         }
         return s;
-      }));
-      setHighlightedRows(rollsToMarkAbsent);
-      setAbsentInput('');
+      })
+    );
+    setHighlightedRows(toHighlight);
+    setAbsentInput('');
+  };
+
+  const resetAll = () => {
+    setStudents((prev) => prev.map((s) => ({ ...s, present: true })));
+    setHighlightedRows([]);
+  };
+
+  const saveAttendance = async () => {
+    if (!selectedClassroomId || !selectedSubjectId || !date) {
+      setMessage({ type: 'error', text: 'Please select class, subject, and date.' });
+      return;
+    }
+    if (!students.length) {
+      setMessage({ type: 'error', text: 'No students found for selected class.' });
+      return;
+    }
+
+    const records = students.map((s) => ({
+      student: s.id,
+      status: s.present ? 'present' : 'absent'
+    }));
+
+    setSaving(true);
+    setMessage(null);
+    try {
+      await post('/api/teacher/mark-attendance', {
+        date,
+        classroom: selectedClassroomId,
+        subject: selectedSubjectId,
+        records
+      });
+      setMessage({ type: 'success', text: 'Attendance saved successfully.' });
+      setTimeout(() => onClose(), 700);
+    } catch (error) {
+      // If already created for this day/class/subject, patch existing record.
+      if (error.status === 409) {
+        try {
+          const existing = await get(`/api/teacher/attendance-records?classroom=${selectedClassroomId}&subject=${selectedSubjectId}&date=${date}`);
+          const record = Array.isArray(existing) ? existing[0] : null;
+          if (!record || !record._id) throw new Error('Existing attendance not found for patch.');
+          await patch(`/api/teacher/update-attendance/${record._id}`, { records });
+          setMessage({ type: 'success', text: 'Existing attendance updated for selected date.' });
+          setTimeout(() => onClose(), 700);
+        } catch (patchError) {
+          setMessage({ type: 'error', text: patchError.message || 'Failed to patch existing attendance.' });
+        }
+      } else {
+        setMessage({ type: 'error', text: error.message || 'Failed to save attendance.' });
+      }
+    } finally {
+      setSaving(false);
     }
   };
 
-  const presentCount = students.filter(s => s.present).length;
+  const presentCount = students.filter((s) => s.present).length;
   const absentCount = students.length - presentCount;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[95vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-        
-        {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
           <div>
             <h2 className="text-xl font-bold text-slate-800">Mark Attendance</h2>
-            <p className="text-sm text-slate-500 mt-0.5">Step 2: Review and submit attendance</p>
+            <p className="text-sm text-slate-500 mt-0.5">Review and submit attendance</p>
           </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -67,141 +188,127 @@ export default function MarkAttendanceModal({ onClose, initialData }) {
           </button>
         </div>
 
-        {/* Selection Summary */}
-        <div className="px-6 py-4 bg-sky-50/50 border-b border-sky-100 flex flex-wrap gap-4 md:gap-8 text-sm">
+        {message && (
+          <div className={`mx-6 mt-4 p-3 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            {message.text}
+          </div>
+        )}
+
+        <div className="px-6 py-4 bg-sky-50/50 border-b border-sky-100 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Date</p>
-            <p className="font-bold text-slate-800">{date || 'Select Date'}</p>
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Time Slot</p>
-            <p className="font-bold text-slate-800">{time || 'Select Time'}</p>
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Subject</p>
-            <p className="font-bold text-slate-800">{subject || 'Select Subject'}</p>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg" />
           </div>
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Class</p>
-            <p className="font-bold text-slate-800">{className || 'Select Class'}</p>
+            <select value={selectedClassroomId} onChange={(e) => setSelectedClassroomId(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg">
+              {classrooms.map((c) => (
+                <option key={c._id} value={c._id}>{c.name}{c.year ? ` (${c.year})` : ''}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Subject</p>
+            <select value={selectedSubjectId} onChange={(e) => setSelectedSubjectId(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg">
+              {subjects.map((s) => (
+                <option key={s._id} value={s._id}>{s.name}{s.code ? ` (${s.code})` : ''}</option>
+              ))}
+            </select>
           </div>
         </div>
 
-        {/* Main Content Area */}
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
-          
-          {/* Smart Quick Absent Tool */}
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm mb-6 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-red-50 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-            
-            <label className="block text-sm font-bold text-slate-800 mb-3 relative z-10">Quick Mark Absentees ⚡</label>
-            <div className="flex flex-col sm:flex-row gap-3 relative z-10">
-              <div className="flex-1">
-                <input 
-                  type="text" 
-                  value={absentInput}
-                  onChange={(e) => setAbsentInput(e.target.value)}
-                  placeholder="Enter roll numbers separated by commas (e.g. 03,07,10)"
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm"
-                />
+          {loading ? (
+            <p className="text-sm text-slate-500">Loading classes and subjects...</p>
+          ) : (
+            <>
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm mb-6 relative overflow-hidden">
+                <label className="block text-sm font-bold text-slate-800 mb-3 relative z-10">Quick Mark Absentees</label>
+                <div className="flex flex-col sm:flex-row gap-3 relative z-10">
+                  <div className="flex-1">
+                    <input
+                      type="text"
+                      value={absentInput}
+                      onChange={(e) => setAbsentInput(e.target.value)}
+                      placeholder="Enter roll numbers separated by commas"
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm"
+                    />
+                  </div>
+                  <button onClick={applyAbsentees} className="px-6 py-2 bg-slate-800 hover:bg-slate-900 text-white font-semibold text-sm rounded-lg shadow-sm transition-colors whitespace-nowrap">
+                    Apply Absentees
+                  </button>
+                </div>
               </div>
-              <button 
-                onClick={applyAbsentees}
-                className="px-6 py-2 bg-slate-800 hover:bg-slate-900 text-white font-semibold text-sm rounded-lg shadow-sm transition-colors whitespace-nowrap"
-              >
-                Apply Absentees
-              </button>
-            </div>
-          </div>
 
-          {/* Table Controls */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="relative">
-              <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input 
-                type="text" 
-                placeholder="Search student..." 
-                className="pl-9 pr-4 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none w-64"
-              />
-            </div>
-            
-            <div className="flex gap-4 text-sm font-semibold">
-              <div className="text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">Present: {presentCount}</div>
-              <div className="text-red-600 bg-red-50 px-3 py-1 rounded-full border border-red-100">Absent: {absentCount}</div>
-            </div>
-          </div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="text-sm text-slate-600">
+                  {selectedClassroom ? `Class: ${selectedClassroom.name}` : 'No class selected'}
+                  {selectedSubject ? ` | Subject: ${selectedSubject.name}` : ''}
+                </div>
+                <div className="flex gap-4 text-sm font-semibold">
+                  <div className="text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">Present: {presentCount}</div>
+                  <div className="text-red-600 bg-red-50 px-3 py-1 rounded-full border border-red-100">Absent: {absentCount}</div>
+                </div>
+              </div>
 
-          {/* Student Table */}
-          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold sticky top-0 z-10">
-                <tr>
-                  <th className="px-6 py-3 w-24">Roll No</th>
-                  <th className="px-6 py-3">Student Name</th>
-                  <th className="px-6 py-3 w-32 text-center">Present</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {students.map((student) => (
-                  <tr 
-                    key={student.roll} 
-                    className={`hover:bg-slate-50 transition-colors cursor-pointer ${!student.present ? 'bg-red-50/30' : ''} ${highlightedRows.includes(student.roll) ? 'bg-red-100/50 animate-pulse-once' : ''}`}
-                    onClick={() => toggleAttendance(student.roll)}
-                  >
-                    <td className="px-6 py-3 font-medium text-slate-700">{student.roll}</td>
-                    <td className="px-6 py-3 text-slate-800">{student.name}</td>
-                    <td className="px-6 py-3 text-center">
-                      <div className="inline-flex items-center justify-center">
-                        <div className={`w-6 h-6 rounded border flex items-center justify-center transition-colors ${
-                          student.present 
-                            ? 'bg-blue-600 border-blue-600 text-white' 
-                            : 'bg-white border-slate-300'
-                        }`}>
-                          {student.present && (
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold sticky top-0 z-10">
+                    <tr>
+                      <th className="px-6 py-3 w-24">Roll No</th>
+                      <th className="px-6 py-3">Student Name</th>
+                      <th className="px-6 py-3 w-32 text-center">Present</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {students.map((student) => (
+                      <tr
+                        key={student.id}
+                        className={`hover:bg-slate-50 transition-colors cursor-pointer ${!student.present ? 'bg-red-50/30' : ''} ${highlightedRows.includes(student.id) ? 'bg-red-100/50 animate-pulse-once' : ''}`}
+                        onClick={() => toggleAttendance(student.id)}
+                      >
+                        <td className="px-6 py-3 font-medium text-slate-700">{student.roll}</td>
+                        <td className="px-6 py-3 text-slate-800">{student.name}</td>
+                        <td className="px-6 py-3 text-center">
+                          <div className="inline-flex items-center justify-center">
+                            <div className={`w-6 h-6 rounded border flex items-center justify-center transition-colors ${student.present ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-300'}`}>
+                              {student.present && (
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {students.length === 0 && (
+                      <tr>
+                        <td colSpan={3} className="px-6 py-6 text-center text-slate-500">No students found for selected classroom.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Footer Actions */}
         <div className="p-6 bg-white border-t border-slate-100 flex items-center justify-between">
-          <button 
-            onClick={() => {
-              setStudents(mockStudents.map(s => ({...s, present: true})));
-              setHighlightedRows([]);
-            }}
-            className="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-          >
+          <button onClick={resetAll} className="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
             Reset All
           </button>
-          
+
           <div className="flex gap-3">
-            <button 
-              onClick={onClose}
-              className="px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-            >
+            <button onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
               Cancel
             </button>
-            <button 
-              onClick={onClose}
-              className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm shadow-blue-600/20 transition-all flex items-center gap-2"
+            <button
+              onClick={saveAttendance}
+              disabled={saving || loading}
+              className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm shadow-blue-600/20 transition-all flex items-center gap-2 disabled:opacity-70"
             >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-              </svg>
-              Save Attendance
+              {saving ? 'Saving...' : 'Save Attendance'}
             </button>
           </div>
         </div>

@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { get, post, remove } from '../../services/apiClient';
+import TeacherEditModal from '../components/TeacherEditModal';
 
 export default function CreateTeacher() {
   const [formData, setFormData] = useState({
@@ -12,6 +14,8 @@ export default function CreateTeacher() {
   const [teachers, setTeachers] = useState([]);
   const [message, setMessage] = useState(null);
   const [selectedSubjects, setSelectedSubjects] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingTeacher, setEditingTeacher] = useState(null);
 
   const theorySubjects = [
     { name: 'ML', type: 'Theory' },
@@ -41,12 +45,17 @@ export default function CreateTeacher() {
     year.classes.map((cls) => ({ year: year.value, class: cls, label: `${cls}` }))
   );
 
-  // Load teachers from localStorage on mount
+  // Load teachers from API on mount
   useEffect(() => {
-    const storedTeachers = localStorage.getItem('teachers');
-    if (storedTeachers) {
-      setTeachers(JSON.parse(storedTeachers));
-    }
+    const loadTeachers = async () => {
+      try {
+        const data = await get('/api/admin/teachers');
+        setTeachers(Array.isArray(data) ? data : []);
+      } catch (error) {
+        setMessage({ type: 'error', text: error.message || 'Failed to load teachers.' });
+      }
+    };
+    loadTeachers();
   }, []);
 
   // Generate temporary password
@@ -90,7 +99,7 @@ export default function CreateTeacher() {
     );
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage(null);
 
@@ -116,45 +125,66 @@ export default function CreateTeacher() {
       return;
     }
 
-    // Create teacher object
-    const newTeacher = {
-      id: Date.now(),
-      name: formData.name,
-      email: formData.email,
-      temporaryPassword: formData.temporaryPassword,
-      yearClasses: formData.yearClasses,
-      subjects: selectedSubjects,
-    };
+    setIsSubmitting(true);
+    try {
+      await post('/api/admin/create-teacher', {
+        name: formData.name,
+        email: formData.email,
+        temporaryPassword: formData.temporaryPassword,
+        yearClasses: formData.yearClasses,
+        subjects: selectedSubjects
+      });
 
-    // Save to localStorage
-    const updatedTeachers = [...teachers, newTeacher];
-    localStorage.setItem('teachers', JSON.stringify(updatedTeachers));
-    setTeachers(updatedTeachers);
+      const freshTeachers = await get('/api/admin/teachers');
+      setTeachers(Array.isArray(freshTeachers) ? freshTeachers : []);
 
-    // Reset form
-    setFormData({
-      name: '',
-      email: '',
-      temporaryPassword: '',
-      yearClasses: [],
-      subjects: [],
-    });
-    setSelectedSubjects([]);
+      // Reset form
+      setFormData({
+        name: '',
+        email: '',
+        temporaryPassword: '',
+        yearClasses: [],
+        subjects: [],
+      });
+      setSelectedSubjects([]);
 
-    setMessage({
-      type: 'success',
-      text: `✓ Teacher "${newTeacher.name}" created successfully!`,
-    });
-
-    setTimeout(() => setMessage(null), 4000);
+      setMessage({
+        type: 'success',
+        text: `Teacher "${formData.name}" created successfully!`,
+      });
+      setTimeout(() => setMessage(null), 4000);
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message || 'Failed to create teacher.' });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDeleteTeacher = (id) => {
-    const updatedTeachers = teachers.filter((t) => t.id !== id);
-    localStorage.setItem('teachers', JSON.stringify(updatedTeachers));
-    setTeachers(updatedTeachers);
-    setMessage({ type: 'success', text: 'Teacher deleted successfully.' });
-    setTimeout(() => setMessage(null), 3000);
+  const handleDeleteTeacher = () => {
+    setMessage({ type: 'error', text: 'Teacher id is required.' });
+  };
+
+  const handleDeleteTeacherById = async (teacherId, teacherName) => {
+    if (!teacherId) return;
+    if (!window.confirm(`Delete teacher ${teacherName || ''}?`)) return;
+    try {
+      await remove(`/api/admin/teachers/${teacherId}`);
+      const freshTeachers = await get('/api/admin/teachers');
+      setTeachers(Array.isArray(freshTeachers) ? freshTeachers : []);
+      setMessage({ type: 'success', text: 'Teacher deleted successfully.' });
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message || 'Failed to delete teacher.' });
+    }
+  };
+
+  const handleEditTeacher = (teacher) => {
+    setEditingTeacher(teacher);
+  };
+
+  const handleTeacherSaved = (updatedTeachers) => {
+    setTeachers(Array.isArray(updatedTeachers) ? updatedTeachers : []);
+    setMessage({ type: 'success', text: 'Teacher updated successfully.' });
+    setTimeout(() => setMessage(null), 4000);
   };
 
   return (
@@ -377,12 +407,13 @@ export default function CreateTeacher() {
           <div className="flex gap-4 pt-4 border-t border-sky-100">
             <button
               type="submit"
+              disabled={isSubmitting}
               className="px-6 py-2 bg-gradient-to-r from-sky-400 to-blue-500 text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              Create Teacher
+              {isSubmitting ? 'Creating...' : 'Create Teacher'}
             </button>
             <button
               type="reset"
@@ -414,41 +445,58 @@ export default function CreateTeacher() {
               </thead>
               <tbody className="divide-y divide-sky-100">
                 {teachers.map((teacher) => (
-                  <tr key={teacher.id} className="hover:bg-sky-50 transition-colors">
+                  <tr key={teacher._id || teacher.id} className="hover:bg-sky-50 transition-colors">
                     <td className="px-6 py-3 text-sm text-slate-800 font-medium">{teacher.name}</td>
                     <td className="px-6 py-3 text-sm text-slate-600">{teacher.email}</td>
                     <td className="px-6 py-3 text-sm">
                       <div className="flex flex-wrap gap-1">
-                        {teacher.yearClasses.map((yc, idx) => (
+                        {(teacher.assignedClassrooms || teacher.yearClasses || []).map((yc, idx) => (
                           <span key={idx} className="px-2 py-1 bg-sky-100 text-sky-700 rounded-full text-xs font-medium">
-                            {yc.class}
+                            {yc.name || yc.class}
                           </span>
                         ))}
                       </div>
                     </td>
                     <td className="px-6 py-3 text-sm">
                       <div className="flex flex-wrap gap-1">
-                        {teacher.subjects.map((subject, idx) => (
+                        {(teacher.assignedSubjects || teacher.subjects || []).map((subject, idx) => (
                           <span
                             key={idx}
                             className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              subject.includes('Theory')
+                              (subject.name || subject).toString().includes('Theory')
                                 ? 'bg-sky-100 text-sky-700'
                                 : 'bg-blue-100 text-blue-700'
                             }`}
                           >
-                            {subject}
+                            {subject.name || subject}
                           </span>
                         ))}
                       </div>
                     </td>
                     <td className="px-6 py-3 text-center">
-                      <button
-                        onClick={() => handleDeleteTeacher(teacher.id)}
-                        className="text-red-600 hover:text-red-800 font-medium text-sm hover:bg-red-50 px-3 py-1 rounded-lg transition-colors"
-                      >
-                        Delete
-                      </button>
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => (window.location.href = `/admin/teachers/${teacher._id || teacher.id}`)}
+                          className="text-slate-600 hover:text-slate-800 font-medium text-sm hover:bg-slate-50 px-3 py-1 rounded-lg transition-colors"
+                        >
+                          Details
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleEditTeacher(teacher)}
+                          className="text-sky-600 hover:text-sky-800 font-medium text-sm hover:bg-sky-50 px-3 py-1 rounded-lg transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTeacherById(teacher._id || teacher.id, teacher.name)}
+                          className="text-red-600 hover:text-red-800 font-medium text-sm hover:bg-red-50 px-3 py-1 rounded-lg transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -456,6 +504,14 @@ export default function CreateTeacher() {
             </table>
           </div>
         </div>
+      )}
+
+      {editingTeacher && (
+        <TeacherEditModal
+          teacher={editingTeacher}
+          onClose={() => setEditingTeacher(null)}
+          onSaved={handleTeacherSaved}
+        />
       )}
     </div>
   );
