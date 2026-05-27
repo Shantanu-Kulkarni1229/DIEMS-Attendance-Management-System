@@ -22,6 +22,25 @@ const normalizeYearToNumber = (value) => {
   return map[key] || undefined;
 };
 
+const subjectAliasMap = {
+  ML: 'Machine Learning',
+  CN: 'Computer Networks',
+  CD: 'Compiler Design',
+  'E&SD': 'Engineering and Skill Development',
+  IOT: 'Internet of Things',
+  PRAC: 'Practical Subjects',
+  CP: 'Competitive Programming',
+  MLP: 'Machine Learning Practical',
+  PD: 'Professional Development',
+  DIY: 'Do It Yourself'
+};
+
+const canonicalSubjectName = (value) => {
+  const raw = String(value || '').trim();
+  const cleaned = raw.replace(/\s*\((Theory|Practical)\)\s*$/i, '').trim();
+  return subjectAliasMap[cleaned.toUpperCase()] || cleaned;
+};
+
 const generateAutoPrn = () => `PRN${Date.now()}${Math.floor(Math.random() * 900 + 100)}`;
 
 exports.createAdmin = asyncHandler(async (req, res) => {
@@ -81,19 +100,18 @@ exports.createTeacher = asyncHandler(async (req, res) => {
       subjectIds.push(found._id);
     } else if (subj && typeof subj === 'object' && subj.name) {
       // Try to find by name and year
-      const query = { name: subj.name };
+      const query = { name: canonicalSubjectName(subj.name) };
       const normalizedYear = normalizeYearToNumber(subj.year);
       if (normalizedYear) query.year = normalizedYear;
       if (subj.category) query.category = subj.category;
       let found = await Subject.findOne(query);
       if (!found) {
-        found = await Subject.create({ name: subj.name, year: normalizedYear, category: subj.category || 'lecture', createdBy: req.user._id });
+        found = await Subject.create({ name: query.name, year: normalizedYear, category: subj.category || 'lecture', createdBy: req.user._id });
       }
       subjectIds.push(found._id);
     } else if (typeof subj === 'string' && subj.trim()) {
-      // Frontend sends values like "ML (Theory)"; store by name for compatibility
       const isPractical = /\(Practical\)\s*$/i.test(subj);
-      const cleanedName = subj.replace(/\s*\((Theory|Practical)\)\s*$/i, '').trim();
+      const cleanedName = canonicalSubjectName(subj);
       let found = await Subject.findOne({ name: cleanedName });
       if (!found) {
         found = await Subject.create({ name: cleanedName, category: isPractical ? 'practical' : 'lecture', createdBy: req.user._id });
