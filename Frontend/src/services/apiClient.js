@@ -58,4 +58,4 @@ export const getAdminTimetable = (opts = {}) => {
   return get(`/api/timetable/admin${qs}`);
 };
 export const substituteLecture = (sessionId, body) => patch(`/api/timetable/sessions/${sessionId}/substitute`, body);
-export const getStudentTodayLectures = () => get('/api/timetable/student/today');
+export const getStudentTodayLectures = () => get('/api/timetable/student/my-lectures');

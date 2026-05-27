@@ -58,6 +58,15 @@ export default function Overview({ attendanceData, loading, error, profile }) {
     loadLectures();
   }, []);
 
+  const normalizeLecture = (lec) => ({
+    _id: lec?._id || lec?.attendanceId,
+    sessionId: lec?.lectureSession?._id || lec?.sessionId,
+    subject: lec?.lectureSession?.subject || lec?.subject,
+    classroom: lec?.lectureSession?.classroom || lec?.classroom,
+    startDateTime: lec?.lectureSession?.startDateTime || lec?.startDateTime || lec?.date,
+    status: lec?.lectureSession?.status || lec?.status || 'scheduled'
+  });
+
   const total = overall?.total || 0;
   const present = overall?.present || 0;
   const absent = Math.max(0, total - present);
@@ -211,17 +220,20 @@ export default function Overview({ attendanceData, loading, error, profile }) {
         <div className="lg:col-span-5 bg-white/90 backdrop-blur rounded-2xl p-4 border border-white shadow-sm mb-4">
           <h3 className="text-sm font-bold text-slate-700 mb-3">Recent Lectures</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {(recentLectures.length ? recentLectures : []).map((lec) => (
+            {(recentLectures.length ? recentLectures : []).map((raw) => {
+              const lec = normalizeLecture(raw);
+              return (
               <div key={lec._id || lec.sessionId} className="p-3 rounded-lg border bg-slate-50 flex items-start justify-between">
                 <div>
                   <div className="font-semibold text-slate-800">{lec.subject?.name || lec.subject || 'Lecture'}</div>
-                  <div className="text-xs text-slate-500">{lec.classroom?.name || lec.class || ''} • {new Date(lec.startDateTime || lec.date || Date.now()).toLocaleString()}</div>
+                  <div className="text-xs text-slate-500">{lec.classroom?.name || lec.class || ''} • {new Date(lec.startDateTime || Date.now()).toLocaleString()}</div>
                 </div>
                 <div className="text-right">
                   <span className={`px-2 py-1 rounded-full text-xs font-semibold ${lec.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700'}`}>{(lec.status || '').toUpperCase()}</span>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
         

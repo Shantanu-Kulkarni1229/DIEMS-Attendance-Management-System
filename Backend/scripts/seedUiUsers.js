@@ -79,7 +79,13 @@ const subjectSeeds = [
   { name: 'Do It Yourself', code: 'DIY801', year: 4, category: 'practical' }
 ];
 
-const canonicalSubjectNames = new Set(subjectSeeds.map((subject) => subject.name));
+const canonicalizeSeedName = (name, category) => {
+  const n = String(name || '').trim();
+  if (category === 'practical' && !/^Lab - /i.test(n)) return `Lab - ${n}`;
+  return n;
+};
+
+const canonicalSubjectNames = new Set(subjectSeeds.map((subject) => canonicalizeSeedName(subject.name, subject.category)));
 const deprecatedSubjectNames = ['ML', 'CN', 'CD', 'E&SD', 'IOT', 'PRAC', 'CP', 'MLP', 'PD', 'DIY'];
 
 const studentRollCallFiles = [
@@ -222,7 +228,8 @@ async function upsertClassroom(seed, createdBy) {
 }
 
 async function upsertSubject(seed, createdBy) {
-  const existing = await Subject.findOne({ name: seed.name });
+  const name = canonicalizeSeedName(seed.name, seed.category);
+  const existing = await Subject.findOne({ name });
   if (existing) {
     existing.code = seed.code;
     existing.year = seed.year;
@@ -233,7 +240,7 @@ async function upsertSubject(seed, createdBy) {
   }
 
   return Subject.create({
-    name: seed.name,
+    name,
     code: seed.code,
     year: seed.year,
     category: seed.category || 'lecture',
@@ -253,6 +260,16 @@ async function cleanupDeprecatedSubjects() {
       }
     ]
   });
+}
+
+async function migratePracticalSubjects() {
+  const practicals = await Subject.find({ category: 'practical' });
+  for (const p of practicals) {
+    if (!/^Lab - /i.test(p.name)) {
+      p.name = `Lab - ${p.name}`;
+      await p.save();
+    }
+  }
 }
 
 const buildSessionTimes = (date, startTime, endTime) => {
@@ -317,6 +334,7 @@ async function seed() {
     }
 
     const subjects = [];
+    await migratePracticalSubjects();
     await cleanupDeprecatedSubjects();
     for (const subjectSeed of subjectSeeds) {
       subjects.push(await upsertSubject(subjectSeed, admin._id));

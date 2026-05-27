@@ -100,7 +100,9 @@ exports.createTeacher = asyncHandler(async (req, res) => {
       subjectIds.push(found._id);
     } else if (subj && typeof subj === 'object' && subj.name) {
       // Try to find by name and year
-      const query = { name: canonicalSubjectName(subj.name) };
+      let queryName = canonicalSubjectName(subj.name);
+      if (subj.category === 'practical' && !/^Lab - /i.test(queryName)) queryName = `Lab - ${queryName}`;
+      const query = { name: queryName };
       const normalizedYear = normalizeYearToNumber(subj.year);
       if (normalizedYear) query.year = normalizedYear;
       if (subj.category) query.category = subj.category;
@@ -111,7 +113,8 @@ exports.createTeacher = asyncHandler(async (req, res) => {
       subjectIds.push(found._id);
     } else if (typeof subj === 'string' && subj.trim()) {
       const isPractical = /\(Practical\)\s*$/i.test(subj);
-      const cleanedName = canonicalSubjectName(subj);
+      let cleanedName = canonicalSubjectName(subj);
+      if (isPractical && !/^Lab - /i.test(cleanedName)) cleanedName = `Lab - ${cleanedName}`;
       let found = await Subject.findOne({ name: cleanedName });
       if (!found) {
         found = await Subject.create({ name: cleanedName, category: isPractical ? 'practical' : 'lecture', createdBy: req.user._id });
@@ -311,22 +314,7 @@ exports.getTeachers = asyncHandler(async (req, res) => {
 });
 
 exports.getStudents = asyncHandler(async (req, res) => {
-  // SuperAdmin sees all students.
-  // Admins should see:
-  // - students they created, OR
-  // - students in their branch, OR
-  // - legacy/imported students without a createdBy value.
-  let filter;
-  if (req.user.role === 'SuperAdmin') {
-    filter = {};
-  } else {
-    const branch = req.user.branch;
-    const orClauses = [ { createdBy: req.user._id }, { createdBy: { $exists: false } }, { createdBy: null } ];
-    if (branch) orClauses.push({ branch });
-    filter = { $or: orClauses };
-  }
-
-  const students = await Student.find(filter).select('-password').sort({ className: 1, division: 1, rollNo: 1 });
+  const students = await Student.find({}).select('-password').sort({ className: 1, division: 1, rollNo: 1 });
   res.status(200).json(students);
 });
 

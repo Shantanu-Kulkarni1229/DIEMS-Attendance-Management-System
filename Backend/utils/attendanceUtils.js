@@ -3,9 +3,13 @@ exports.calculateStudentAttendance = (studentId, attendanceRecords) => {
   let totalPresent = 0;
   let totalSessions = 0;
   attendanceRecords.forEach((rec) => {
+    if (!rec || !rec.subject || !rec.subject._id) return;
     const subjectId = rec.subject._id.toString();
-    if (!subjectMap[subjectId]) subjectMap[subjectId] = { subject: rec.subject.name, present: 0, total: 0 };
-    const studentEntry = rec.records.find(r => r.student.toString() === studentId.toString());
+    const subjectName = rec.subject.name || 'Unknown';
+    if (!subjectMap[subjectId]) subjectMap[subjectId] = { subject: subjectName, present: 0, total: 0 };
+    const studentEntry = Array.isArray(rec.records)
+      ? rec.records.find((r) => r && r.student && r.student.toString() === studentId.toString())
+      : null;
     if (studentEntry) {
       subjectMap[subjectId].total += 1;
       totalSessions += 1;
