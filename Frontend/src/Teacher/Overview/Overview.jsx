@@ -50,7 +50,7 @@ const weeklyOverview = [
 const buildTeacherStats = (dashboardData) => {
   const assignedSubjects = Array.isArray(dashboardData?.assignedSubjects) ? dashboardData.assignedSubjects : [];
   const attendanceRecords = Array.isArray(dashboardData?.attendanceRecords) ? dashboardData.attendanceRecords : [];
-  const assignedClassrooms = Array.isArray(dashboardData?.teacher?.assignedClassrooms) ? dashboardData.teacher.assignedClassrooms : [];
+  const assignedClassrooms = Array.isArray(dashboardData?.assignedClassrooms) ? dashboardData.assignedClassrooms : [];
 
   if (!assignedSubjects.length && !attendanceRecords.length && !assignedClassrooms.length) {
     return fallbackStats;
@@ -189,8 +189,8 @@ export default function Overview({ onMarkAttendance, profile, dashboardData, tod
           <h3 className="text-sm font-bold text-slate-700 mb-2">Assigned Classrooms</h3>
           <p className="text-xs text-slate-500 mb-3">Classes you are responsible for</p>
           <div className="flex flex-col gap-2">
-            {(Array.isArray(dashboardData?.teacher?.assignedClassrooms) && dashboardData.teacher.assignedClassrooms.length) ? (
-              dashboardData.teacher.assignedClassrooms.map((c) => (
+            {(Array.isArray(dashboardData?.assignedClassrooms) && dashboardData.assignedClassrooms.length) ? (
+              dashboardData.assignedClassrooms.map((c) => (
                 <div key={c._id} className="px-3 py-2 rounded-lg bg-slate-50 border border-slate-100 text-sm text-slate-700">
                   {c.name}{c.year ? ` (${c.year})` : ''}
                 </div>

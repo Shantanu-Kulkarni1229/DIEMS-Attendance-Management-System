@@ -3,6 +3,7 @@ const Attendance = require('../models/Attendance');
 const Subject = require('../models/Subject');
 const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
+const TimetableEntry = require('../models/TimetableEntry');
 const AttendanceService = require('../services/attendanceService');
 
 const isValidStatus = (status) => status === 'present' || status === 'absent';
@@ -10,6 +11,20 @@ const isValidStatus = (status) => status === 'present' || status === 'absent';
 const validateRecordsArray = (records) => {
   if (!Array.isArray(records) || records.length === 0) return false;
   return records.every((r) => r && r.student && isValidStatus(r.status));
+};
+
+const resolveTeacherClassroomIds = async (teacherId) => {
+  const teacher = await Teacher.findById(teacherId).select('assignedClassrooms');
+  if (!teacher) return [];
+
+  const directClassrooms = Array.isArray(teacher.assignedClassrooms)
+    ? teacher.assignedClassrooms.map((id) => id.toString())
+    : [];
+
+  if (directClassrooms.length) return [...new Set(directClassrooms)];
+
+  const timetableClassrooms = await TimetableEntry.distinct('classroom', { plannedTeacher: teacherId });
+  return [...new Set(timetableClassrooms.map((id) => id.toString()))];
 };
 
 exports.markAttendance = asyncHandler(async (req, res) => {
@@ -24,12 +39,12 @@ exports.markAttendance = asyncHandler(async (req, res) => {
   }
 
   if (req.user.role === 'Teacher') {
-    const teacher = await Teacher.findById(req.user._id).select('assignedClassrooms');
-    if (!teacher) {
+    const allowedClassroomIds = await resolveTeacherClassroomIds(req.user._id);
+    if (!allowedClassroomIds.length) {
       res.status(404);
       throw new Error('Teacher not found');
     }
-    const allowed = teacher.assignedClassrooms.some((id) => id.toString() === classroom.toString());
+    const allowed = allowedClassroomIds.some((id) => id.toString() === classroom.toString());
     if (!allowed) {
       res.status(403);
       throw new Error('Teacher is not assigned to this classroom');
@@ -196,12 +211,12 @@ exports.getStudentsForClassroom = asyncHandler(async (req, res) => {
   const { classroomId } = req.params;
 
   if (req.user.role === 'Teacher') {
-    const teacher = await Teacher.findById(req.user._id).select('assignedClassrooms');
-    if (!teacher) {
+    const allowedClassroomIds = await resolveTeacherClassroomIds(req.user._id);
+    if (!allowedClassroomIds.length) {
       res.status(404);
       throw new Error('Teacher not found');
     }
-    const allowed = teacher.assignedClassrooms.some((id) => id.toString() === classroomId.toString());
+    const allowed = allowedClassroomIds.some((id) => id.toString() === classroomId.toString());
     if (!allowed) {
       res.status(403);
       throw new Error('Teacher is not assigned to this classroom');
@@ -225,12 +240,17 @@ exports.getTeacherDashboard = asyncHandler(async (req, res) => {
     throw new Error('Teacher not found');
   }
 
+  const fallbackClassroomIds = await resolveTeacherClassroomIds(req.user._id);
+  const classroomDocs = fallbackClassroomIds.length
+    ? await Student.db.model('Classroom').find({ _id: { $in: fallbackClassroomIds } }).select('name year')
+    : (Array.isArray(teacher.assignedClassrooms) ? teacher.assignedClassrooms : []);
+
   const assignedSubjects = await Subject.find({ assignedTeacher: req.user._id })
     .populate('assignedTeacher', 'name email branch')
     .sort({ name: 1, code: 1 });
 
   const studentEntries = await Promise.all(
-    (Array.isArray(teacher.assignedClassrooms) ? teacher.assignedClassrooms : []).map(async (classroom) => {
+    (Array.isArray(classroomDocs) ? classroomDocs : []).map(async (classroom) => {
       const students = await Student.find({ classroom: classroom._id })
         .select('_id name prn rollNo className division branch classroom')
         .sort({ rollNo: 1, name: 1 });
@@ -253,7 +273,7 @@ exports.getTeacherDashboard = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     teacher,
-    assignedClassrooms: teacher.assignedClassrooms,
+    assignedClassrooms: classroomDocs,
     assignedSubjects,
     studentsByClassroom,
     attendanceRecords,
@@ -272,7 +292,10 @@ exports.getAttendanceContext = asyncHandler(async (req, res) => {
     throw new Error('Teacher not found');
   }
 
-  const assignedClassrooms = Array.isArray(teacher.assignedClassrooms) ? teacher.assignedClassrooms : [];
+  const fallbackClassroomIds = await resolveTeacherClassroomIds(req.user._id);
+  const assignedClassrooms = fallbackClassroomIds.length
+    ? await Student.db.model('Classroom').find({ _id: { $in: fallbackClassroomIds } }).select('name year')
+    : (Array.isArray(teacher.assignedClassrooms) ? teacher.assignedClassrooms : []);
   const assignedSubjects = await Subject.find({ assignedTeacher: req.user._id })
     .populate('assignedTeacher', 'name email branch')
     .sort({ name: 1, code: 1 });
