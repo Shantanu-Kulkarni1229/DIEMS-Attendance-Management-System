@@ -79,6 +79,9 @@ const subjectSeeds = [
   { name: 'Do It Yourself', code: 'DIY801', year: 4, category: 'practical' }
 ];
 
+const canonicalSubjectNames = new Set(subjectSeeds.map((subject) => subject.name));
+const deprecatedSubjectNames = ['ML', 'CN', 'CD', 'E&SD', 'IOT', 'PRAC', 'CP', 'MLP', 'PD', 'DIY'];
+
 const studentRollCallFiles = [
   {
     fileName: 'TY A Roll Call List (1).csv',
@@ -238,6 +241,20 @@ async function upsertSubject(seed, createdBy) {
   });
 }
 
+async function cleanupDeprecatedSubjects() {
+  await Subject.deleteMany({
+    $and: [
+      { name: { $nin: Array.from(canonicalSubjectNames) } },
+      {
+        $or: [
+          { name: { $in: deprecatedSubjectNames } },
+          { code: { $in: ['ML101', 'CN201', 'CD301', 'E&SD401', 'IOT501', 'PRAC', 'CP601', 'MLP102', 'PD701', 'DIY801'] } }
+        ]
+      }
+    ]
+  });
+}
+
 const buildSessionTimes = (date, startTime, endTime) => {
   const start = new Date(date);
   const end = new Date(date);
@@ -300,6 +317,7 @@ async function seed() {
     }
 
     const subjects = [];
+    await cleanupDeprecatedSubjects();
     for (const subjectSeed of subjectSeeds) {
       subjects.push(await upsertSubject(subjectSeed, admin._id));
     }
