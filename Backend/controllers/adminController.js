@@ -258,9 +258,20 @@ exports.createStudent = asyncHandler(async (req, res) => {
 });
 
 exports.getTeachers = asyncHandler(async (req, res) => {
-  // SuperAdmin sees all teachers. Admins should only see teachers they created.
-  // This prevents admins from viewing other admins' teachers across branches.
-  const filter = req.user.role === 'SuperAdmin' ? {} : { createdBy: req.user._id };
+  // SuperAdmin sees all teachers.
+  // Admins should see:
+  // - teachers they created, OR
+  // - teachers in their branch, OR
+  // - legacy/imported teachers that don't have a createdBy set.
+  let filter;
+  if (req.user.role === 'SuperAdmin') {
+    filter = {};
+  } else {
+    const branch = req.user.branch;
+    const orClauses = [ { createdBy: req.user._id }, { createdBy: { $exists: false } }, { createdBy: null } ];
+    if (branch) orClauses.push({ branch });
+    filter = { $or: orClauses };
+  }
   const teachers = await Teacher.find(filter).select('-password').populate('assignedClassrooms', 'name year').lean();
 
   // Attach assignedSubjects by querying Subject.assignedTeacher (single source of truth)
@@ -282,8 +293,21 @@ exports.getTeachers = asyncHandler(async (req, res) => {
 });
 
 exports.getStudents = asyncHandler(async (req, res) => {
-  // SuperAdmin sees all students, Admin sees only their branch students
-  const filter = req.user.role === 'SuperAdmin' ? {} : { branch: req.user.branch };
+  // SuperAdmin sees all students.
+  // Admins should see:
+  // - students they created, OR
+  // - students in their branch, OR
+  // - legacy/imported students without a createdBy value.
+  let filter;
+  if (req.user.role === 'SuperAdmin') {
+    filter = {};
+  } else {
+    const branch = req.user.branch;
+    const orClauses = [ { createdBy: req.user._id }, { createdBy: { $exists: false } }, { createdBy: null } ];
+    if (branch) orClauses.push({ branch });
+    filter = { $or: orClauses };
+  }
+
   const students = await Student.find(filter).select('-password').sort({ className: 1, division: 1, rollNo: 1 });
   res.status(200).json(students);
 });

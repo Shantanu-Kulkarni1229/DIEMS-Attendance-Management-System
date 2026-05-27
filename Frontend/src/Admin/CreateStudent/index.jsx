@@ -227,7 +227,7 @@ export default function CreateStudent() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-6 py-2 bg-gradient-to-r from-sky-400 to-blue-500 text-white rounded-xl font-medium hover:shadow-lg transition-all"
+              className="px-6 py-2 bg-linear-to-r from-sky-400 to-blue-500 text-white rounded-xl font-medium hover:shadow-lg transition-all"
             >
               {isSubmitting ? 'Creating...' : 'Create Student'}
             </button>
@@ -242,43 +242,52 @@ export default function CreateStudent() {
         </form>
       </div>
 
-      {students.length > 0 && (
-        <div className="bg-white/60 backdrop-blur rounded-2xl shadow-lg border border-sky-100 overflow-hidden">
-          <div className="p-6 border-b border-sky-100">
-            <h3 className="text-lg font-semibold text-slate-800">Created Students ({students.length})</h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gradient-to-r from-sky-50 to-blue-50 border-b border-sky-100">
-                <tr>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Name</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Roll No</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Class</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Division</th>
-                  <th className="px-6 py-3 text-center text-sm font-semibold text-slate-700">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-sky-100">
-                {students.map((student) => (
-                  <tr key={student._id} className="hover:bg-sky-50 transition-colors">
-                    <td className="px-6 py-3 text-sm text-slate-800 font-medium">{student.name}</td>
-                    <td className="px-6 py-3 text-sm text-slate-600">{student.rollNo}</td>
-                    <td className="px-6 py-3 text-sm text-slate-600">{student.className}</td>
-                    <td className="px-6 py-3 text-sm text-slate-600">{student.division}</td>
-                    <td className="px-6 py-3 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <button type="button" onClick={() => (window.location.href = `/admin/students/${student._id}`)} className="text-slate-600 hover:text-slate-800 font-medium text-sm hover:bg-slate-50 px-3 py-1 rounded-lg transition-colors">Details</button>
-                        <button type="button" onClick={() => handleEditStudent(student)} className="text-sky-600 hover:text-sky-800 font-medium text-sm hover:bg-sky-50 px-3 py-1 rounded-lg transition-colors">Edit</button>
-                        <button type="button" onClick={() => handleDeleteStudent(student)} className="text-red-600 hover:text-red-800 font-medium text-sm hover:bg-red-50 px-3 py-1 rounded-lg transition-colors">Delete</button>
-                      </div>
-                    </td>
+      {students.length > 0 && (() => {
+        const groups = students.reduce((acc, s) => {
+          const key = s.className || s.classSemester || 'Unknown';
+          if (!acc[key]) acc[key] = [];
+          acc[key].push(s);
+          return acc;
+        }, {});
+
+        return Object.keys(groups).sort().map((classKey) => (
+          <div key={classKey} className="bg-white/60 backdrop-blur rounded-2xl shadow-lg border border-sky-100 overflow-hidden mb-6">
+            <div className="p-6 border-b border-sky-100 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-slate-800">{classKey} ({groups[classKey].length})</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-linear-to-r from-sky-50 to-blue-50 border-b border-sky-100">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Name</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Roll No</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Class</th>
+                    <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Division</th>
+                    <th className="px-6 py-3 text-center text-sm font-semibold text-slate-700">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-sky-100">
+                  {groups[classKey].map((student) => (
+                    <tr key={student._id} className="hover:bg-sky-50 transition-colors">
+                      <td className="px-6 py-3 text-sm text-slate-800 font-medium">{student.name}</td>
+                      <td className="px-6 py-3 text-sm text-slate-600">{student.rollNo}</td>
+                      <td className="px-6 py-3 text-sm text-slate-600">{student.className}</td>
+                      <td className="px-6 py-3 text-sm text-slate-600">{student.division}</td>
+                      <td className="px-6 py-3 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <button type="button" onClick={() => (window.location.href = `/admin/students/${student._id}`)} className="text-slate-600 hover:text-slate-800 font-medium text-sm hover:bg-slate-50 px-3 py-1 rounded-lg transition-colors">Details</button>
+                          <button type="button" onClick={() => handleEditStudent(student)} className="text-sky-600 hover:text-sky-800 font-medium text-sm hover:bg-sky-50 px-3 py-1 rounded-lg transition-colors">Edit</button>
+                          <button type="button" onClick={() => handleDeleteStudent(student)} className="text-red-600 hover:text-red-800 font-medium text-sm hover:bg-red-50 px-3 py-1 rounded-lg transition-colors">Delete</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        ));
+      })()}
 
       {editingStudent && (
         <StudentEditModal
