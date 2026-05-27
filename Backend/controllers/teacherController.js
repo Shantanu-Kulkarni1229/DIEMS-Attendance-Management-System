@@ -229,6 +229,22 @@ exports.getTeacherDashboard = asyncHandler(async (req, res) => {
     .populate('assignedTeacher', 'name email branch')
     .sort({ name: 1, code: 1 });
 
+  const studentEntries = await Promise.all(
+    (Array.isArray(teacher.assignedClassrooms) ? teacher.assignedClassrooms : []).map(async (classroom) => {
+      const students = await Student.find({ classroom: classroom._id })
+        .select('_id name prn rollNo className division branch classroom')
+        .sort({ rollNo: 1, name: 1 });
+      return [classroom._id.toString(), students];
+    })
+  );
+
+  const studentsByClassroom = studentEntries.reduce((acc, [classroomId, students]) => {
+    acc[classroomId] = students;
+    return acc;
+  }, {});
+
+  const canMarkAttendance = Array.isArray(teacher.assignedClassrooms) && teacher.assignedClassrooms.length > 0 && assignedSubjects.length > 0;
+
   const attendanceRecords = await Attendance.find({ teacher: req.user._id })
     .populate('classroom', 'name year')
     .populate('subject', 'name code year assignedTeacher')
@@ -237,8 +253,49 @@ exports.getTeacherDashboard = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     teacher,
+    assignedClassrooms: teacher.assignedClassrooms,
     assignedSubjects,
+    studentsByClassroom,
     attendanceRecords,
+    canMarkAttendance,
     sourceOfTruth: 'subject.assignedTeacher'
+  });
+});
+
+exports.getAttendanceContext = asyncHandler(async (req, res) => {
+  const teacher = await Teacher.findById(req.user._id)
+    .select('-password')
+    .populate('assignedClassrooms', 'name year');
+
+  if (!teacher) {
+    res.status(404);
+    throw new Error('Teacher not found');
+  }
+
+  const assignedClassrooms = Array.isArray(teacher.assignedClassrooms) ? teacher.assignedClassrooms : [];
+  const assignedSubjects = await Subject.find({ assignedTeacher: req.user._id })
+    .populate('assignedTeacher', 'name email branch')
+    .sort({ name: 1, code: 1 });
+
+  const studentEntries = await Promise.all(
+    assignedClassrooms.map(async (classroom) => {
+      const students = await Student.find({ classroom: classroom._id })
+        .select('_id name prn rollNo className division branch classroom')
+        .sort({ rollNo: 1, name: 1 });
+      return [classroom._id.toString(), students];
+    })
+  );
+
+  const studentsByClassroom = studentEntries.reduce((acc, [classroomId, students]) => {
+    acc[classroomId] = students;
+    return acc;
+  }, {});
+
+  res.status(200).json({
+    teacher,
+    assignedClassrooms,
+    assignedSubjects,
+    studentsByClassroom,
+    canMarkAttendance: assignedClassrooms.length > 0 && assignedSubjects.length > 0
   });
 });

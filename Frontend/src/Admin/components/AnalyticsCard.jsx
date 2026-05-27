@@ -18,15 +18,25 @@ export default function AnalyticsCard({ title, type, data }) {
           </div>
 
           {/* Data points with connecting line */}
-          <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none">
-            <polyline points={data.map((d, i) => `${(i / (data.length - 1)) * 100}% ${100 - d.value}%`).join(' ')} fill="none" stroke="#0ea5e9" strokeWidth="3" vectorEffect="non-scaling-stroke" />
-            {data.map((d, i) => {
-              const x = (i / (data.length - 1)) * 100;
-              const y = 100 - d.value;
+          <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+            {(() => {
+              const denom = Math.max(1, data.length - 1);
+              const points = data.map((d, i) => {
+                const x = (i / denom) * 100;
+                const y = 100 - (Number(d.value) || 0);
+                return `${x} ${y}`;
+              }).join(' ');
               return (
-                <circle key={i} cx={`${x}%`} cy={`${y}%`} r="4" fill="#0ea5e9" vectorEffect="non-scaling-stroke" />
+                <>
+                  <polyline points={points} fill="none" stroke="#0ea5e9" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+                  {data.map((d, i) => {
+                    const x = (i / denom) * 100;
+                    const y = 100 - (Number(d.value) || 0);
+                    return <circle key={i} cx={x} cy={y} r="2.5" fill="#0ea5e9" vectorEffect="non-scaling-stroke" />;
+                  })}
+                </>
               );
-            })}
+            })()}
           </svg>
 
           {/* Bar representations */}
