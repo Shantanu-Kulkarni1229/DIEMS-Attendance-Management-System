@@ -255,7 +255,7 @@ export default function CreateTeacher() {
               <button
                 type="button"
                 onClick={generatePassword}
-                className="px-4 py-2 bg-gradient-to-r from-sky-400 to-blue-500 text-white rounded-xl font-medium hover:shadow-lg transition-all"
+                className="px-4 py-2 bg-linear-to-r from-sky-400 to-blue-500 text-white rounded-xl font-medium hover:shadow-lg transition-all"
               >
                 Generate
               </button>
@@ -408,7 +408,7 @@ export default function CreateTeacher() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-6 py-2 bg-gradient-to-r from-sky-400 to-blue-500 text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2"
+              className="px-6 py-2 bg-linear-to-r from-sky-400 to-blue-500 text-white rounded-xl font-medium hover:shadow-lg transition-all flex items-center gap-2"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -434,7 +434,7 @@ export default function CreateTeacher() {
 
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gradient-to-r from-sky-50 to-blue-50 border-b border-sky-100">
+              <thead className="bg-linear-to-r from-sky-50 to-blue-50 border-b border-sky-100">
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Name</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Email</th>
@@ -508,6 +508,7 @@ export default function CreateTeacher() {
 
       {editingTeacher && (
         <TeacherEditModal
+          key={editingTeacher._id || editingTeacher.id}
           teacher={editingTeacher}
           onClose={() => setEditingTeacher(null)}
           onSaved={handleTeacherSaved}

@@ -248,8 +248,9 @@ exports.createStudent = asyncHandler(async (req, res) => {
 });
 
 exports.getTeachers = asyncHandler(async (req, res) => {
-  // SuperAdmin sees all teachers, Admin sees only their branch teachers
-  const filter = req.user.role === 'SuperAdmin' ? {} : { branch: req.user.branch };
+  // SuperAdmin sees all teachers. Admins should only see teachers they created.
+  // This prevents admins from viewing other admins' teachers across branches.
+  const filter = req.user.role === 'SuperAdmin' ? {} : { createdBy: req.user._id };
   const teachers = await Teacher.find(filter).select('-password').populate('assignedClassrooms', 'name year').lean();
 
   // Attach assignedSubjects by querying Subject.assignedTeacher (single source of truth)
@@ -447,8 +448,9 @@ exports.updateTeacher = asyncHandler(async (req, res) => {
         subjectIds.push(found._id.toString());
       }
     }
+    // Replace teacher-subject mapping entirely, including explicit clear when no subjects are selected.
+    await Subject.updateMany({ assignedTeacher: teacher._id }, { $set: { assignedTeacher: null } });
     if (subjectIds.length > 0) {
-      await Subject.updateMany({ assignedTeacher: teacher._id }, { $set: { assignedTeacher: null } });
       await Subject.updateMany({ _id: { $in: subjectIds } }, { $set: { assignedTeacher: teacher._id } });
     }
   }

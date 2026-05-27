@@ -1,28 +1,92 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { get, patch } from '../../services/apiClient';
 
 export default function TeacherEditModal({ teacher, onClose, onSaved }) {
-  const [form, setForm] = useState({
-    name: teacher?.name || '',
-    email: teacher?.email || '',
-    mustChangePassword: !!teacher?.mustChangePassword,
-    assignedClassrooms: (teacher?.assignedClassrooms || []).map((c) => c?._id || c).filter(Boolean),
-    subjects: (teacher?.assignedSubjects || []).map((s) => s?._id || s).filter(Boolean)
+  const buildFormState = (teacherData) => ({
+    name: teacherData?.name || '',
+    email: teacherData?.email || '',
+    mustChangePassword: !!teacherData?.mustChangePassword,
+    assignedClassrooms: (teacherData?.assignedClassrooms || []).map((c) => String(c?._id || c)).filter(Boolean),
+    subjects: (teacherData?.assignedSubjects || []).map((s) => String(s?._id || s)).filter(Boolean)
   });
+
+  const [form, setForm] = useState(buildFormState(teacher));
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [classroomOptions, setClassroomOptions] = useState([]);
+  const [subjectOptions, setSubjectOptions] = useState([]);
+  const [loadingOptions, setLoadingOptions] = useState(true);
 
-  const classroomLabels = useMemo(() => (teacher?.assignedClassrooms || []).map((c) => c?.name || String(c)), [teacher]);
-  const subjectLabels = useMemo(() => (teacher?.assignedSubjects || []).map((s) => s?.name || String(s)), [teacher]);
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadOptions = async () => {
+      setLoadingOptions(true);
+      setMessage('');
+      try {
+        const [classrooms, subjects] = await Promise.all([
+          get('/api/admin/classrooms'),
+          get('/api/admin/subjects')
+        ]);
+        if (!isMounted) return;
+
+        const normalizedClassrooms = (Array.isArray(classrooms) ? classrooms : [])
+          .map((cls) => ({
+            _id: String(cls?._id || ''),
+            name: cls?.name || 'Unnamed class',
+            year: cls?.year || ''
+          }))
+          .filter((cls) => cls._id)
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        const normalizedSubjects = (Array.isArray(subjects) ? subjects : [])
+          .map((subj) => ({
+            _id: String(subj?._id || ''),
+            name: subj?.name || 'Unnamed subject',
+            year: subj?.year || '',
+            assignedTeacher: subj?.assignedTeacher || null
+          }))
+          .filter((subj) => subj._id)
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        setClassroomOptions(normalizedClassrooms);
+        setSubjectOptions(normalizedSubjects);
+      } catch (error) {
+        if (!isMounted) return;
+        setMessage(error.message || 'Failed to load class/subject options.');
+      } finally {
+        if (isMounted) setLoadingOptions(false);
+      }
+    };
+
+    loadOptions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const classroomLabels = useMemo(() => {
+    const map = new Map(classroomOptions.map((cls) => [String(cls._id), cls.name]));
+    return form.assignedClassrooms.map((id) => map.get(String(id)) || String(id));
+  }, [classroomOptions, form.assignedClassrooms]);
+
+  const subjectLabels = useMemo(() => {
+    const map = new Map(subjectOptions.map((subj) => [String(subj._id), subj.name]));
+    return form.subjects.map((id) => map.get(String(id)) || String(id));
+  }, [subjectOptions, form.subjects]);
 
   if (!teacher) return null;
 
   const toggleValue = (key, id) => {
+    const normalizedId = String(id);
     setForm((prev) => {
       const values = prev[key];
       return {
         ...prev,
-        [key]: values.includes(id) ? values.filter((v) => v !== id) : [...values, id]
+        [key]: values.includes(normalizedId)
+          ? values.filter((v) => v !== normalizedId)
+          : [...values, normalizedId]
       };
     });
   };
@@ -39,7 +103,7 @@ export default function TeacherEditModal({ teacher, onClose, onSaved }) {
         assignedClassrooms: form.assignedClassrooms,
         subjects: form.subjects
       };
-      await patch(`/api/admin/teachers/${teacher._id}`, payload);
+      await patch(`/api/admin/teachers/${teacher._id || teacher.id}`, payload);
       const freshTeachers = await get('/api/admin/teachers');
       onSaved?.(Array.isArray(freshTeachers) ? freshTeachers : []);
       onClose();
@@ -51,7 +115,7 @@ export default function TeacherEditModal({ teacher, onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[120] bg-slate-950/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-120 bg-slate-950/50 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="w-full max-w-3xl rounded-3xl bg-white shadow-2xl border border-white overflow-hidden max-h-[92vh] overflow-y-auto">
         <div className="px-6 py-5 border-b border-slate-100 flex items-start justify-between">
           <div>
@@ -66,7 +130,7 @@ export default function TeacherEditModal({ teacher, onClose, onSaved }) {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
           <div className="lg:col-span-1 bg-slate-50 px-6 py-6 border-b lg:border-b-0 lg:border-r border-slate-100">
-            <div className="rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 text-white p-5 shadow-lg shadow-sky-500/20">
+            <div className="rounded-2xl bg-linear-to-br from-sky-500 to-blue-600 text-white p-5 shadow-lg shadow-sky-500/20">
               <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center font-bold text-xl mb-4">
                 {String(teacher.name || 'T').slice(0, 2).toUpperCase()}
               </div>
@@ -114,10 +178,10 @@ export default function TeacherEditModal({ teacher, onClose, onSaved }) {
 
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-3">Assigned Classes</label>
-              <div className="flex flex-wrap gap-2">
-                {(teacher.assignedClassrooms || []).map((cls) => {
-                  const id = cls?._id || cls;
-                  const label = cls?.name || String(cls);
+              <div className="flex flex-wrap gap-2 max-h-44 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                {classroomOptions.map((cls) => {
+                  const id = String(cls._id);
+                  const label = cls.year ? `${cls.name} (${cls.year})` : cls.name;
                   const active = form.assignedClassrooms.includes(id);
                   return (
                     <button key={id} type="button" onClick={() => toggleValue('assignedClassrooms', id)} className={`px-3 py-2 rounded-full text-sm border transition-colors ${active ? 'bg-sky-600 text-white border-sky-600' : 'bg-white text-slate-600 border-slate-200 hover:border-sky-300'}`}>
@@ -125,24 +189,37 @@ export default function TeacherEditModal({ teacher, onClose, onSaved }) {
                     </button>
                   );
                 })}
-                {!teacher.assignedClassrooms?.length && <span className="text-sm text-slate-400">No class options available from current data.</span>}
+                {!loadingOptions && !classroomOptions.length && <span className="text-sm text-slate-400">No classes available.</span>}
               </div>
             </div>
 
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-3">Assigned Subjects</label>
-              <div className="flex flex-wrap gap-2">
-                {(teacher.assignedSubjects || []).map((subj) => {
-                  const id = subj?._id || subj;
-                  const label = subj?.name || String(subj);
+              <div className="flex flex-wrap gap-2 max-h-56 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+                {subjectOptions.map((subj) => {
+                  const id = String(subj._id);
+                  const ownerId = subj.assignedTeacher?._id ? String(subj.assignedTeacher._id) : null;
+                  const assignedToAnotherTeacher = ownerId && ownerId !== String(teacher._id || teacher.id);
+                  const label = subj.year ? `${subj.name} (${subj.year})` : subj.name;
                   const active = form.subjects.includes(id);
                   return (
-                    <button key={id} type="button" onClick={() => toggleValue('subjects', id)} className={`px-3 py-2 rounded-full text-sm border transition-colors ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}>
-                      {label}
-                    </button>
+                    <div key={id} className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleValue('subjects', id)}
+                        className={`px-3 py-2 rounded-full text-sm border transition-colors ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}
+                      >
+                        {label}
+                      </button>
+                      {assignedToAnotherTeacher && (
+                        <span className="text-[11px] px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                          Assigned to {subj.assignedTeacher?.name || 'another teacher'}
+                        </span>
+                      )}
+                    </div>
                   );
                 })}
-                {!teacher.assignedSubjects?.length && <span className="text-sm text-slate-400">No subject options available from current data.</span>}
+                {!loadingOptions && !subjectOptions.length && <span className="text-sm text-slate-400">No subjects available.</span>}
               </div>
             </div>
 
@@ -153,7 +230,7 @@ export default function TeacherEditModal({ teacher, onClose, onSaved }) {
 
             <div className="flex items-center justify-end gap-3 pt-2">
               <button type="button" onClick={onClose} className="px-5 py-3 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold">Cancel</button>
-              <button type="submit" disabled={saving} className="px-5 py-3 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-white font-semibold shadow-lg shadow-sky-500/20 disabled:opacity-70">
+              <button type="submit" disabled={saving} className="px-5 py-3 rounded-xl bg-linear-to-r from-sky-500 to-blue-600 text-white font-semibold shadow-lg shadow-sky-500/20 disabled:opacity-70">
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>
             </div>

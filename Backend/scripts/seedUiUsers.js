@@ -197,6 +197,40 @@ const buildSessionTimes = (date, startTime, endTime) => {
   return { start, end };
 };
 
+async function upsertLectureSession(timetableEntryId, date, payload) {
+  const query = { timetableEntry: timetableEntryId, date };
+  // Try to find an exact match first
+  let doc = await LectureSession.findOne(query);
+  if (doc) {
+    Object.assign(doc, payload);
+    await doc.save();
+    return doc;
+  }
+
+  // If no exact match, ensure we don't violate unique indexes (classroom + startDateTime)
+  const clash = await LectureSession.findOne({ classroom: payload.classroom, startDateTime: payload.startDateTime });
+  if (clash) {
+    Object.assign(clash, payload);
+    await clash.save();
+    return clash;
+  }
+
+  try {
+    return await LectureSession.create({ timetableEntry: timetableEntryId, date, ...payload });
+  } catch (err) {
+    // Handle potential race condition duplicate-key
+    if (err && err.code === 11000) {
+      const existing = await LectureSession.findOne({ classroom: payload.classroom, startDateTime: payload.startDateTime });
+      if (existing) {
+        Object.assign(existing, payload);
+        await existing.save();
+        return existing;
+      }
+    }
+    throw err;
+  }
+}
+
 async function seed() {
   try {
     const mongoUri = process.argv[2] || process.env.MONGO_URI;
@@ -222,7 +256,8 @@ async function seed() {
     const teacher = await upsertUser(Teacher, {
       ...seedUsers.teacher,
       extra: {
-        assignedClassrooms: classrooms.slice(0, 2).map((classroom) => classroom._id)
+        assignedClassrooms: classrooms.slice(0, 2).map((classroom) => classroom._id),
+        createdBy: admin._id
       }
     });
 
@@ -277,35 +312,25 @@ async function seed() {
     const mlTimes = buildSessionTimes(dayStart, ttMl.startTime, ttMl.endTime);
     const cnTimes = buildSessionTimes(dayStart, ttCn.startTime, ttCn.endTime);
 
-    await LectureSession.findOneAndUpdate(
-      { timetableEntry: ttMl._id, date: dayStart },
-      {
-        $set: {
-          startDateTime: mlTimes.start,
-          endDateTime: mlTimes.end,
-          classroom: ttMl.classroom,
-          subject: ttMl.subject,
-          plannedTeacher: ttMl.plannedTeacher,
-          status: 'planned'
-        }
-      },
-      { upsert: true, new: true }
-    );
+    await upsertLectureSession(ttMl._id, dayStart, {
+      startDateTime: mlTimes.start,
+      endDateTime: mlTimes.end,
+      classroom: ttMl.classroom,
+      subject: ttMl.subject,
+      plannedTeacher: ttMl.plannedTeacher,
+      status: 'planned',
+      createdBy: admin._id
+    });
 
-    await LectureSession.findOneAndUpdate(
-      { timetableEntry: ttCn._id, date: dayStart },
-      {
-        $set: {
-          startDateTime: cnTimes.start,
-          endDateTime: cnTimes.end,
-          classroom: ttCn.classroom,
-          subject: ttCn.subject,
-          plannedTeacher: ttCn.plannedTeacher,
-          status: 'planned'
-        }
-      },
-      { upsert: true, new: true }
-    );
+    await upsertLectureSession(ttCn._id, dayStart, {
+      startDateTime: cnTimes.start,
+      endDateTime: cnTimes.end,
+      classroom: ttCn.classroom,
+      subject: ttCn.subject,
+      plannedTeacher: ttCn.plannedTeacher,
+      status: 'planned',
+      createdBy: admin._id
+    });
 
     const student = await upsertUser(Student, {
       ...seedUsers.student,
