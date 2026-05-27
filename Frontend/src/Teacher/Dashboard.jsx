@@ -95,6 +95,7 @@ export default function TeacherDashboard() {
         <MarkAttendanceModal 
           onClose={() => setShowMarkAttendance(false)} 
           initialData={selectedClass} 
+          dashboardData={dashboardData}
           onSaved={refreshTeacherData}
         />
       )}

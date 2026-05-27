@@ -9,10 +9,11 @@ const toInputDate = (date = new Date()) => {
   return `${y}-${m}-${day}`;
 };
 
-export default function MarkAttendanceModal({ onClose, initialData, onSaved }) {
+export default function MarkAttendanceModal({ onClose, initialData, onSaved, dashboardData }) {
   const [classrooms, setClassrooms] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [students, setStudents] = useState([]);
+  const [studentsByClassroom, setStudentsByClassroom] = useState({});
   const [absentInput, setAbsentInput] = useState('');
   const [highlightedRows, setHighlightedRows] = useState([]);
   const [selectedClassroomId, setSelectedClassroomId] = useState('');
@@ -23,14 +24,53 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const normalizeClassroom = (item) => {
+    if (!item) return null;
+    return {
+      _id: item._id || item.id,
+      name: item.name || item.className || item.label || 'Classroom',
+      year: item.year || item.semester || ''
+    };
+  };
+
+  const normalizeSubject = (item) => {
+    if (!item) return null;
+    return {
+      _id: item._id || item.id,
+      name: item.name || item.subject || 'Subject',
+      code: item.code || ''
+    };
+  };
+
   useEffect(() => {
     const loadInit = async () => {
       try {
-        const dashboard = await get('/api/teacher/dashboard');
-        const classes = Array.isArray(dashboard?.teacher?.assignedClassrooms) ? dashboard.teacher.assignedClassrooms : [];
-        const subs = Array.isArray(dashboard?.assignedSubjects) ? dashboard.assignedSubjects : [];
+        let context = null;
+        try {
+          context = await get('/api/teacher/attendance-context');
+        } catch (contextError) {
+          context = null;
+        }
+
+        const dashboardClasses = Array.isArray(dashboardData?.assignedClassrooms)
+          ? dashboardData.assignedClassrooms
+          : Array.isArray(dashboardData?.teacher?.assignedClassrooms)
+            ? dashboardData.teacher.assignedClassrooms
+            : [];
+        const dashboardSubjects = Array.isArray(dashboardData?.assignedSubjects)
+          ? dashboardData.assignedSubjects
+          : [];
+        const dashboardStudentsByClassroom = dashboardData?.studentsByClassroom || {};
+
+        const classes = (Array.isArray(context?.assignedClassrooms) && context.assignedClassrooms.length ? context.assignedClassrooms : dashboardClasses)
+          .map(normalizeClassroom)
+          .filter(Boolean);
+        const subs = (Array.isArray(context?.assignedSubjects) && context.assignedSubjects.length ? context.assignedSubjects : dashboardSubjects)
+          .map(normalizeSubject)
+          .filter(Boolean);
         setClassrooms(classes);
         setSubjects(subs);
+        setStudentsByClassroom(context?.studentsByClassroom || dashboardStudentsByClassroom || {});
 
         if (classes[0]) setSelectedClassroomId(classes[0]._id);
         if (subs[0]) setSelectedSubjectId(subs[0]._id);
@@ -60,7 +100,12 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved }) {
     };
 
     loadInit();
-  }, [initialData]);
+  }, [
+    // stable primitive deps so effect array size/order doesn't change
+    (dashboardData && Array.isArray(dashboardData.assignedClassrooms) ? dashboardData.assignedClassrooms.length : 0),
+    (dashboardData && Array.isArray(dashboardData.assignedSubjects) ? dashboardData.assignedSubjects.length : 0),
+    initialData?.sessionId || null
+  ]);
 
   useEffect(() => {
     const loadStudents = async () => {
@@ -68,6 +113,19 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved }) {
         setStudents([]);
         return;
       }
+
+      const cachedStudents = studentsByClassroom[selectedClassroomId];
+      if (Array.isArray(cachedStudents)) {
+        const mapped = cachedStudents.map((s) => ({
+          id: s._id,
+          roll: s.rollNo || s.prn || String(s._id).slice(-4),
+          name: s.name,
+          present: true
+        }));
+        setStudents(mapped);
+        return;
+      }
+
       try {
         const data = await get(`/api/teacher/classrooms/${selectedClassroomId}/students`);
         const mapped = (Array.isArray(data) ? data : []).map((s) => ({
@@ -83,7 +141,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved }) {
     };
 
     loadStudents();
-  }, [selectedClassroomId]);
+  }, [selectedClassroomId, studentsByClassroom]);
 
   const selectedClassroom = useMemo(
     () => classrooms.find((c) => c._id === selectedClassroomId),

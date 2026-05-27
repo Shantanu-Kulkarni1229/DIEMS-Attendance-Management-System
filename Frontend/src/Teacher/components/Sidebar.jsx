@@ -1,40 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { logout } from '../../services/session';
-import { get } from '../../services/apiClient';
 
-export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setSidebarOpen, onMarkAttendanceClick }) {
+export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setSidebarOpen, onMarkAttendanceClick, profile }) {
   const baseNavItems = [
     { id: 'dashboard', label: 'Dashboard', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /> },
     { id: 'mark-attendance', label: 'Mark Attendance', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /> }
   ];
 
-  const [navItems, setNavItems] = useState(baseNavItems);
-  const [loadingNav, setLoadingNav] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        const body = await get('/api/teacher/dashboard');
-        if (!mounted) return;
-        // show "Mark Attendance" only if teacher has assigned classrooms and subjects
-        const hasClassrooms = body && body.teacher && Array.isArray(body.teacher.assignedClassrooms) && body.teacher.assignedClassrooms.length > 0;
-        const hasSubjects = body && Array.isArray(body.assignedSubjects) && body.assignedSubjects.length > 0;
-        const filtered = baseNavItems.filter((it) => {
-          if (it.id === 'mark-attendance') return hasClassrooms && hasSubjects;
-          return true;
-        });
-        setNavItems(filtered);
-      } catch (err) {
-        // on error, keep default nav (conservative)
-        console.error('Failed to load teacher dashboard for nav filtering', err);
-      } finally {
-        if (mounted) setLoadingNav(false);
-      }
-    };
-    load();
-    return () => { mounted = false; };
-  }, []);
+  const navItems = baseNavItems;
 
   return (
     <>
@@ -51,7 +24,7 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
         
         {/* Brand */}
         <div className="p-6 flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-sky-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 text-white">
+          <div className="w-10 h-10 bg-linear-to-br from-blue-600 to-sky-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 text-white">
             <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
             </svg>
@@ -105,7 +78,7 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
 
         {/* Promo Card */}
         <div className="px-4 pb-4">
-          <div className="p-5 bg-gradient-to-br from-sky-50 to-blue-50/50 rounded-2xl border border-sky-100 shadow-sm relative overflow-hidden group">
+          <div className="p-5 bg-linear-to-br from-sky-50 to-blue-50/50 rounded-2xl border border-sky-100 shadow-sm relative overflow-hidden group">
             <div className="absolute top-[-20%] right-[-10%] w-24 h-24 bg-blue-200 rounded-full opacity-30 blur-2xl group-hover:bg-blue-300 transition-colors"></div>
             <div className="absolute bottom-[-10%] left-[-10%] w-20 h-20 bg-sky-200 rounded-full opacity-30 blur-2xl group-hover:bg-sky-300 transition-colors"></div>
             
@@ -114,7 +87,7 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
             
             <div className="flex justify-center relative z-10">
               <div className="w-full h-24 bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-white/60 flex items-center justify-center relative overflow-hidden group-hover:shadow-md transition-all">
-                <div className="absolute inset-0 bg-gradient-to-t from-sky-50/50 to-transparent"></div>
+                <div className="absolute inset-0 bg-linear-to-t from-sky-50/50 to-transparent"></div>
                 <div className="relative text-3xl flex items-center justify-center space-x-2">
                   <span className="transform -rotate-12 hover:rotate-0 transition-transform">💻</span>
                   <span className="transform rotate-12 hover:rotate-0 transition-transform">🎓</span>
