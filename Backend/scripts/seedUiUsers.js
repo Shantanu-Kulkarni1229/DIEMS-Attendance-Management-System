@@ -483,6 +483,43 @@ async function seed() {
     console.log(`- Classrooms: ${classrooms.map((classroom) => classroom.name).join(', ')}`);
     console.log(`- Subjects: ${subjects.map((subject) => `${subject.name} [${subject.category || 'lecture'}]`).join(', ')}`);
     console.log('- Timetable: 10:15-11:15 and 11:15-12:15 sessions generated for today');
+
+    // DEMO: ensure TYA classroom + 20 demo students exist and Competitive Programming assigned
+    const demoClassName = 'TYA';
+    const demoClass = await upsertClassroom({ name: demoClassName, year: 'TY' }, admin._id);
+    console.log(`- Ensured demo classroom: ${demoClass.name}`);
+
+    // Ensure Competitive Programming subject exists
+    const cpSubject = await upsertSubject({ name: 'Competitive Programming', code: 'CP601', year: 4, category: 'lecture' }, admin._id);
+    console.log(`- Ensured subject: ${cpSubject.name}`);
+
+    // Assign subject to our seeded teacher
+    await Subject.updateOne({ _id: cpSubject._id }, { $set: { assignedTeacher: teacher._id } });
+    console.log(`- Assigned ${cpSubject.name} to teacher ${teacher.email}`);
+
+    // Create 20 demo students in demoClass
+    const demoStudents = [];
+    for (let i = 1; i <= 20; i++) {
+      const roll = String(i).padStart(2, '0');
+      const prn = `TYA2026${roll}`;
+      const s = await upsertUser(Student, {
+        name: `Demo Student ${roll}`,
+        email: `tya.student${roll}@diems.test`,
+        password: 'diems@123',
+        branch: 'CSE',
+        extra: {
+          prn,
+          rollNo: roll,
+          className: 'TY',
+          division: 'A',
+          classroom: demoClass._id,
+          branch: 'CSE'
+        }
+      });
+      demoStudents.push(s);
+    }
+    console.log(`- Created/updated ${demoStudents.length} demo students in ${demoClass.name}`);
+    console.log(demoStudents.map(s => ({ id: s._id, name: s.name, email: s.email, rollNo: s.rollNo, classroom: String(s.classroom) })).slice(0, 20));
     process.exit(0);
   } catch (error) {
     console.error('Seed failed:', error.message || error);

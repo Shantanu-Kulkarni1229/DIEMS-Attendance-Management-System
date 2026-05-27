@@ -299,3 +299,31 @@ exports.getAttendanceContext = asyncHandler(async (req, res) => {
     canMarkAttendance: assignedClassrooms.length > 0 && assignedSubjects.length > 0
   });
 });
+
+// Debug helper: return teacher doc + related data for the logged-in teacher
+exports.getTeacherDebug = asyncHandler(async (req, res) => {
+  const teacher = await Teacher.findById(req.user._id)
+    .select('-password')
+    .populate('assignedClassrooms', 'name year');
+
+  if (!teacher) {
+    res.status(404);
+    throw new Error('Teacher not found');
+  }
+
+  const assignedSubjects = await Subject.find({ assignedTeacher: req.user._id }).sort({ name: 1 });
+
+  const studentEntries = await Promise.all(
+    (Array.isArray(teacher.assignedClassrooms) ? teacher.assignedClassrooms : []).map(async (classroom) => {
+      const students = await Student.find({ classroom: classroom._id }).select('_id name prn rollNo className division branch classroom');
+      return [classroom._id.toString(), students];
+    })
+  );
+
+  const studentsByClassroom = studentEntries.reduce((acc, [classroomId, students]) => {
+    acc[classroomId] = students;
+    return acc;
+  }, {});
+
+  res.status(200).json({ teacher, assignedSubjects, studentsByClassroom });
+});
