@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import Overview from './Overview/Dashboard';
+import Timetable from './Timetable/Timetable';
 import CreateTeacher from './CreateTeacher/index';
 import CreateStudent from './CreateStudent/index';
 import Reports from './Reports/index';
@@ -14,6 +15,8 @@ export default function Admin() {
     switch (currentPage) {
       case 'overview':
         return <Overview />;
+      case 'timetable':
+        return <Timetable />;
       case 'create-teacher':
         return <CreateTeacher />;
       case 'create-student':

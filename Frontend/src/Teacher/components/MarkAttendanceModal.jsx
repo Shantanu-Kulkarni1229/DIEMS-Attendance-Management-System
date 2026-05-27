@@ -161,11 +161,16 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved }) {
       }
       setTimeout(() => onClose(), 700);
     } catch (error) {
+      // prefer backend-sent structured messages when present
+      const payload = error && error.payload ? error.payload : null;
+      const backendMessage = payload && (payload.message || (Array.isArray(payload.errors) ? payload.errors.join('; ') : null));
+
       if (selectedSessionId) {
-        setMessage({ type: 'error', text: error.message || 'Failed to save session attendance.' });
+        setMessage({ type: 'error', text: backendMessage || error.message || 'Failed to save session attendance.' });
         setSaving(false);
         return;
       }
+
       // If already created for this day/class/subject, patch existing record.
       if (error.status === 409) {
         try {
@@ -179,10 +184,12 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved }) {
           }
           setTimeout(() => onClose(), 700);
         } catch (patchError) {
-          setMessage({ type: 'error', text: patchError.message || 'Failed to patch existing attendance.' });
+          const pPayload = patchError && patchError.payload ? patchError.payload : null;
+          const pMsg = pPayload && (pPayload.message || (Array.isArray(pPayload.errors) ? pPayload.errors.join('; ') : null));
+          setMessage({ type: 'error', text: pMsg || patchError.message || 'Failed to patch existing attendance.' });
         }
       } else {
-        setMessage({ type: 'error', text: error.message || 'Failed to save attendance.' });
+        setMessage({ type: 'error', text: backendMessage || error.message || 'Failed to save attendance.' });
       }
     } finally {
       setSaving(false);

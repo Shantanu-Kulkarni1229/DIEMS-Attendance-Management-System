@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { get, post } from '../../services/apiClient';
+import { get, post, getStudentTodayLectures } from '../../services/apiClient';
 
 const defaultSubjects = [
   { name: 'Machine Learning (ML)', classes: 30, present: 26, absent: 4, percentage: 86.7, status: 'Good' },
@@ -33,6 +33,7 @@ export default function Overview({ attendanceData, loading, error, profile }) {
   const apiSubjects = attendanceData?.attendance?.subjects;
   const [leaveForm, setLeaveForm] = useState({ leaveType: 'Sick Leave', fromDate: '', toDate: '', reason: '' });
   const [leaveHistory, setLeaveHistory] = useState([]);
+  const [recentLectures, setRecentLectures] = useState([]);
   const [leaveMessage, setLeaveMessage] = useState('');
   const [leaveLoading, setLeaveLoading] = useState(false);
 
@@ -46,6 +47,15 @@ export default function Overview({ attendanceData, loading, error, profile }) {
       }
     };
     loadLeaves();
+    const loadLectures = async () => {
+      try {
+        const data = await getStudentTodayLectures();
+        setRecentLectures(Array.isArray(data) ? data : []);
+      } catch (err) {
+        setRecentLectures([]);
+      }
+    };
+    loadLectures();
   }, []);
 
   const total = overall?.total || 0;
@@ -197,6 +207,23 @@ export default function Overview({ attendanceData, loading, error, profile }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        {/* Recent Lectures */}
+        <div className="lg:col-span-5 bg-white/90 backdrop-blur rounded-2xl p-4 border border-white shadow-sm mb-4">
+          <h3 className="text-sm font-bold text-slate-700 mb-3">Recent Lectures</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {(recentLectures.length ? recentLectures : []).map((lec) => (
+              <div key={lec._id || lec.sessionId} className="p-3 rounded-lg border bg-slate-50 flex items-start justify-between">
+                <div>
+                  <div className="font-semibold text-slate-800">{lec.subject?.name || lec.subject || 'Lecture'}</div>
+                  <div className="text-xs text-slate-500">{lec.classroom?.name || lec.class || ''} • {new Date(lec.startDateTime || lec.date || Date.now()).toLocaleString()}</div>
+                </div>
+                <div className="text-right">
+                  <span className={`px-2 py-1 rounded-full text-xs font-semibold ${lec.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700'}`}>{(lec.status || '').toUpperCase()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
         
         {/* Subject Wise Attendance Table */}
         <div className="lg:col-span-3 bg-white/90 backdrop-blur rounded-2xl p-6 border border-white shadow-sm">

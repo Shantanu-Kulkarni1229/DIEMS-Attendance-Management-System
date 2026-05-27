@@ -51,6 +51,13 @@ const subjectSeeds = [
   { name: 'CP', code: 'CP401', year: 4 }
 ];
 
+const studentPlan = {
+  FY: { className: 'FY', division: 'A', branch: 'BSH' },
+  SY: { className: 'SY', division: 'A', branch: 'CSE' },
+  TY: { className: 'TY', division: 'A', branch: 'CSE' },
+  BTECH: { className: 'BTECH', division: 'A', branch: 'CSE' }
+};
+
 async function upsertUser(Model, payload) {
   const existing = await Model.findOne({ email: payload.email });
   if (existing) {
@@ -107,6 +114,77 @@ async function upsertSubject(seed, createdBy) {
     year: seed.year,
     createdBy
   });
+}
+
+async function upsertDummyStudentsForClassroom(classroom, index, createdBy, count = 20) {
+  const classKey = String(classroom.year || classroom.name || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const plan = studentPlan[classKey] || { className: classKey || classroom.name, division: 'A', branch: 'CSE' };
+  const prefix = classroom.name.replace(/[^A-Z0-9]/gi, '').toUpperCase() || `CLASS${index + 1}`;
+  const created = [];
+
+  for (let rollIndex = 1; rollIndex <= count; rollIndex += 1) {
+    const rollNo = String(rollIndex).padStart(2, '0');
+    const email = `ui.${prefix.toLowerCase()}.student${rollNo.toLowerCase()}@diems.test`;
+    const prn = `UI${String(classroom.year || '00').toUpperCase().replace(/[^A-Z0-9]/g, '')}${String(index + 1).padStart(2, '0')}${rollNo}`;
+    const name = `${classroom.name} Student ${rollNo}`;
+
+    const existing = await Student.findOne({ email });
+    if (existing) {
+      existing.name = name;
+      existing.password = 'UiTest@123';
+      existing.mustChangePassword = false;
+      existing.prn = prn;
+      existing.rollNo = rollNo;
+      existing.className = plan.className;
+      existing.division = plan.division;
+      existing.branch = plan.branch;
+      existing.classroom = classroom._id;
+      existing.phone = `99999${String(index + 1).padStart(2, '0')}${rollNo}`;
+      existing.parentEmail = `parent.${prefix.toLowerCase()}.${rollNo}@diems.test`;
+      if (createdBy) existing.createdBy = createdBy;
+      await existing.save();
+      created.push(existing);
+      continue;
+    }
+
+    const duplicatePrn = await Student.findOne({ prn });
+    if (duplicatePrn) {
+      duplicatePrn.name = name;
+      duplicatePrn.email = email;
+      duplicatePrn.password = 'UiTest@123';
+      duplicatePrn.mustChangePassword = false;
+      duplicatePrn.rollNo = rollNo;
+      duplicatePrn.className = plan.className;
+      duplicatePrn.division = plan.division;
+      duplicatePrn.branch = plan.branch;
+      duplicatePrn.classroom = classroom._id;
+      duplicatePrn.phone = `99999${String(index + 1).padStart(2, '0')}${rollNo}`;
+      duplicatePrn.parentEmail = `parent.${prefix.toLowerCase()}.${rollNo}@diems.test`;
+      if (createdBy) duplicatePrn.createdBy = createdBy;
+      await duplicatePrn.save();
+      created.push(duplicatePrn);
+      continue;
+    }
+
+    const student = await Student.create({
+      name,
+      email,
+      password: 'UiTest@123',
+      mustChangePassword: false,
+      prn,
+      rollNo,
+      className: plan.className,
+      division: plan.division,
+      branch: plan.branch,
+      classroom: classroom._id,
+      phone: `99999${String(index + 1).padStart(2, '0')}${rollNo}`,
+      parentEmail: `parent.${prefix.toLowerCase()}.${rollNo}@diems.test`,
+      createdBy
+    });
+    created.push(student);
+  }
+
+  return created;
 }
 
 const buildSessionTimes = (date, startTime, endTime) => {
@@ -243,6 +321,13 @@ async function seed() {
       }
     });
 
+    const dummyStudentsByClassroom = [];
+    for (let classroomIndex = 0; classroomIndex < classrooms.length; classroomIndex += 1) {
+      const classroom = classrooms[classroomIndex];
+      const seededStudents = await upsertDummyStudentsForClassroom(classroom, classroomIndex, admin._id, 20);
+      dummyStudentsByClassroom.push({ classroom: classroom.name, students: seededStudents.length });
+    }
+
     console.log('Seed complete. Created/updated:');
     console.log(`- SuperAdmin: ${superAdmin.email}`);
     console.log(`- Admin: ${admin.email}`);
@@ -250,6 +335,7 @@ async function seed() {
     console.log(`- Student: ${student.email}`);
     console.log(`- Classrooms: ${classrooms.map((classroom) => classroom.name).join(', ')}`);
     console.log(`- Subjects: ${subjects.map((subject) => subject.name).join(', ')}`);
+    console.log(`- Dummy students per class: ${dummyStudentsByClassroom.map((item) => `${item.classroom}=${item.students}`).join(', ')}`);
     console.log('- Timetable: 10:15-11:15 and 11:15-12:15 sessions generated for today');
     process.exit(0);
   } catch (error) {

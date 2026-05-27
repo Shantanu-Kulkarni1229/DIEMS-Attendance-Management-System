@@ -137,7 +137,9 @@ export default function Overview({ onMarkAttendance, profile, dashboardData, tod
       setLeaveRequests(Array.isArray(data) ? data : []);
       setLeaveMessage(`Leave ${status.toLowerCase()} successfully.`);
     } catch (error) {
-      setLeaveMessage(error.message || 'Failed to update leave request.');
+      const payload = error && error.payload ? error.payload : null;
+      const backendMessage = payload && (payload.message || (Array.isArray(payload.errors) ? payload.errors.join('; ') : null));
+      setLeaveMessage(backendMessage || error.message || 'Failed to update leave request.');
     }
   };
 
@@ -156,7 +158,9 @@ export default function Overview({ onMarkAttendance, profile, dashboardData, tod
         setSessionAttendance(attendance);
       }
     } catch (error) {
-      setAttendancePanelError(error.message || 'Failed to load session attendance details.');
+      const payload = error && error.payload ? error.payload : null;
+      const backendMessage = payload && (payload.message || (Array.isArray(payload.errors) ? payload.errors.join('; ') : null));
+      setAttendancePanelError(backendMessage || error.message || 'Failed to load session attendance details.');
     } finally {
       setAttendancePanelLoading(false);
     }
@@ -177,6 +181,41 @@ export default function Overview({ onMarkAttendance, profile, dashboardData, tod
           Good Morning, {profile?.name || 'Teacher'} <span className="text-2xl animate-wave origin-bottom-right">👋</span>
         </h1>
         <p className="text-slate-500 mt-1">Here's what's happening with your classes today.</p>
+      </div>
+
+      {/* Assigned Classrooms & Subjects */}
+      <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-white/80 backdrop-blur rounded-2xl p-4 border border-white shadow-sm">
+          <h3 className="text-sm font-bold text-slate-700 mb-2">Assigned Classrooms</h3>
+          <p className="text-xs text-slate-500 mb-3">Classes you are responsible for</p>
+          <div className="flex flex-col gap-2">
+            {(Array.isArray(dashboardData?.teacher?.assignedClassrooms) && dashboardData.teacher.assignedClassrooms.length) ? (
+              dashboardData.teacher.assignedClassrooms.map((c) => (
+                <div key={c._id} className="px-3 py-2 rounded-lg bg-slate-50 border border-slate-100 text-sm text-slate-700">
+                  {c.name}{c.year ? ` (${c.year})` : ''}
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-slate-400">No assigned classrooms found.</p>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white/80 backdrop-blur rounded-2xl p-4 border border-white shadow-sm">
+          <h3 className="text-sm font-bold text-slate-700 mb-2">Assigned Subjects</h3>
+          <p className="text-xs text-slate-500 mb-3">Subjects you teach</p>
+          <div className="flex flex-col gap-2">
+            {(Array.isArray(dashboardData?.assignedSubjects) && dashboardData.assignedSubjects.length) ? (
+              dashboardData.assignedSubjects.map((s) => (
+                <div key={s._id} className="px-3 py-2 rounded-lg bg-slate-50 border border-slate-100 text-sm text-slate-700">
+                  {s.name}{s.code ? ` (${s.code})` : ''}
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-slate-400">No assigned subjects found.</p>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Summary Stat Cards */}

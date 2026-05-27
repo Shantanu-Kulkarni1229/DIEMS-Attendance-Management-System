@@ -3,6 +3,7 @@ import { logout } from '../../services/session';
 export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setSidebarOpen }) {
   const navItems = [
     { id: 'overview', label: 'Overview', icon: 'dashboard' },
+    { id: 'timetable', label: 'Timetable', icon: 'timetable' },
     { id: 'create-teacher', label: 'Create Teacher', icon: 'teacher' },
     { id: 'create-student', label: 'Create Student', icon: 'student' },
     { id: 'reports', label: 'Reports', icon: 'reports' },
@@ -28,6 +29,11 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
       reports: (
         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+        </svg>
+      ),
+      timetable: (
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M3 11h18M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
         </svg>
       ),
       logout: (

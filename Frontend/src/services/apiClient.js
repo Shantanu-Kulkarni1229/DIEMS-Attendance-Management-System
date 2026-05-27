@@ -50,3 +50,12 @@ export const post = (path, body) => request(path, { method: 'POST', body });
 export const put = (path, body) => request(path, { method: 'PUT', body });
 export const patch = (path, body) => request(path, { method: 'PATCH', body });
 export const remove = (path) => request(path, { method: 'DELETE' });
+
+// Timetable / lecture helpers
+export const getTeacherToday = () => get('/api/timetable/teacher/today');
+export const getAdminTimetable = (opts = {}) => {
+  const qs = opts.date ? `?date=${encodeURIComponent(opts.date)}` : '';
+  return get(`/api/timetable/admin${qs}`);
+};
+export const substituteLecture = (sessionId, body) => patch(`/api/timetable/sessions/${sessionId}/substitute`, body);
+export const getStudentTodayLectures = () => get('/api/timetable/student/today');
