@@ -37,6 +37,28 @@ const seedUsers = {
   }
 };
 
+const teacherDirectorySeeds = [
+  { name: 'Sugandha Nandedkar', email: 'sugandhanandedkar@dietms.org' },
+  { name: 'Sandeep Shah', email: 'sandeepshah@dietms.org' },
+  { name: 'Madhubala Chaudhari', email: 'madhubalachaudhari@dietms.org' },
+  { name: 'Sonali Shelke', email: 'sonalishelke@dietms.org' },
+  { name: 'Manisha Mundhe', email: 'manishamundhe@dietms.org' },
+  { name: 'Pravin Rathod', email: 'pravinrathod@dietms.org' },
+  { name: 'Ashwini Gaikwad', email: 'ashwinigaikwad@dietms.org' },
+  { name: 'Vishalsingh Chauhan', email: 'vishalchauhan@dietms.org' },
+  { name: 'Gopal Burkul', email: 'gopalburkul@dietms.org' },
+  { name: 'Pranali Bhalekar', email: 'pranalibhalekar@dietms.org' },
+  { name: 'Ashwini Jagnade', email: 'ashwinijagnade@dietms.org' },
+  { name: 'Amol Wakhare', email: 'amolwakhare@dietms.org' },
+  { name: 'Payal Bansod', email: 'payalbansod@dietms.org' },
+  { name: 'Rucha Galgali', email: 'ruchagalgali@dietms.org' },
+  { name: 'Pournima Gawade', email: 'pournimagawade@dietms.org' },
+  { name: 'Ashwini Swami', email: 'ashwiniswami@dietms.org' },
+  { name: 'Prachi Waghmare', email: 'prachiwaghmare@dietms.org' },
+  { name: 'Rutuja Kale', email: 'rskale.cse@dietms.org' },
+  { name: 'Akanksha Nagdeve', email: 'akankshanagdeve@dietms.org' }
+];
+
 const classroomSeeds = [
   { name: 'FY-A', year: 'FY' },
   { name: 'SY-A', year: 'SY' },
@@ -45,21 +67,38 @@ const classroomSeeds = [
 ];
 
 const subjectSeeds = [
-  { name: 'ML', code: 'ML101', year: 3 },
-  { name: 'CN', code: 'CN201', year: 3 },
-  { name: 'CD', code: 'CD301', year: 2 },
-  { name: 'CP', code: 'CP401', year: 4 }
+  { name: 'Machine Learning', code: 'ML101', year: 3, category: 'lecture' },
+  { name: 'Computer Networks', code: 'CN201', year: 3, category: 'lecture' },
+  { name: 'Compiler Design', code: 'CD301', year: 2, category: 'lecture' },
+  { name: 'Engineering and Skill Development', code: 'E&SD401', year: 2, category: 'lecture' },
+  { name: 'Internet of Things', code: 'IOT501', year: 4, category: 'lecture' },
+  { name: 'Practical Subjects', code: 'PRAC', year: 4, category: 'practical' },
+  { name: 'Competitive Programming', code: 'CP601', year: 4, category: 'lecture' },
+  { name: 'Machine Learning Practical', code: 'MLP102', year: 3, category: 'practical' },
+  { name: 'Professional Development', code: 'PD701', year: 4, category: 'lecture' },
+  { name: 'Do It Yourself', code: 'DIY801', year: 4, category: 'practical' }
 ];
 
-const studentPlan = {
-  FY: { className: 'FY', division: 'A', branch: 'BSH' },
-  SY: { className: 'SY', division: 'A', branch: 'CSE' },
-  TY: { className: 'TY', division: 'A', branch: 'CSE' },
-  BTECH: { className: 'BTECH', division: 'A', branch: 'CSE' }
-};
+const studentRollCallFiles = [
+  {
+    fileName: 'TY A Roll Call List (1).csv',
+    classroomName: 'TYCSE A',
+    className: 'TY',
+    division: 'A'
+  },
+  {
+    fileName: 'TY B Roll call list (1).csv',
+    classroomName: 'TYCSE B',
+    className: 'TY',
+    division: 'B'
+  }
+];
 
 async function upsertUser(Model, payload) {
-  const existing = await Model.findOne({ email: payload.email });
+  const lookup = payload.extra?.prn
+    ? { $or: [{ email: payload.email }, { prn: payload.extra.prn }] }
+    : { email: payload.email };
+  const existing = await Model.findOne(lookup);
   if (existing) {
     existing.name = payload.name;
     existing.password = payload.password;
@@ -80,6 +119,87 @@ async function upsertUser(Model, payload) {
   };
 
   return Model.create(data);
+}
+
+const buildTeacherSeed = (entry) => ({
+  name: entry.name,
+  email: entry.email,
+  password: 'diems@123',
+  role: 'Teacher',
+  branch: entry.branch || 'CSE'
+});
+
+const cleanCsvCell = (value) => String(value ?? '').trim().replace(/^"|"$/g, '');
+
+const parseRollCallCsv = (csvText) => {
+  const rows = csvText.split(/\r?\n/);
+  const students = [];
+
+  for (const row of rows) {
+    const trimmed = row.trim();
+    if (!trimmed) continue;
+    if (/^SR\.NO|^Sr\. No\.|^Roll Call List|^Marathwada|^Deogiri|^Chhatrapati|^Department:|^Class :|^Class Teacher|^FF|^,/.test(trimmed)) continue;
+    if (!/^(\d+|P1),/.test(trimmed)) continue;
+
+    const cells = trimmed.split(',').map(cleanCsvCell);
+    const srNo = cells[0];
+    const rollNo = cells[1];
+    const collegePrn = cells[2];
+    const batuPrn = cells[3];
+    const name = cells[4];
+    const studentMobile = cells[7];
+    const parentMobile = cells[8];
+    const email = cells[9];
+
+    if (!name || !rollNo || !collegePrn) continue;
+
+    students.push({
+      srNo,
+      rollNo,
+      prn: batuPrn,
+      collegePrn,
+      batuPrn,
+      name,
+      studentMobile,
+      parentMobile,
+      email
+    });
+  }
+
+  return students;
+};
+
+async function seedRollCallStudents(admin, studentFileSeed) {
+  const csvPath = require('path').join(__dirname, '..', studentFileSeed.fileName);
+  const csvText = require('fs').readFileSync(csvPath, 'utf8');
+  const rows = parseRollCallCsv(csvText);
+  const classroom = await upsertClassroom({ name: studentFileSeed.classroomName, year: studentFileSeed.className }, admin._id);
+
+  const seeded = [];
+  for (const row of rows) {
+    const seededStudent = await upsertUser(Student, {
+      name: row.name,
+      email: row.email || `${row.rollNo.toLowerCase()}@dietms.org`,
+      password: 'diems@123',
+      branch: 'CSE',
+      extra: {
+        prn: row.prn,
+        collegePrn: row.collegePrn,
+        batuPrn: row.batuPrn,
+        rollNo: row.rollNo,
+        className: studentFileSeed.className,
+        division: studentFileSeed.division,
+        classroom: classroom._id,
+        phone: row.studentMobile,
+        studentMobile: row.studentMobile,
+        parentMobile: row.parentMobile,
+        parentEmail: row.email
+      }
+    });
+    seeded.push(seededStudent);
+  }
+
+  return { classroom, seeded };
 }
 
 async function upsertClassroom(seed, createdBy) {
@@ -103,6 +223,7 @@ async function upsertSubject(seed, createdBy) {
   if (existing) {
     existing.code = seed.code;
     existing.year = seed.year;
+    if (seed.category) existing.category = seed.category;
     if (createdBy) existing.createdBy = createdBy;
     await existing.save();
     return existing;
@@ -112,79 +233,9 @@ async function upsertSubject(seed, createdBy) {
     name: seed.name,
     code: seed.code,
     year: seed.year,
+    category: seed.category || 'lecture',
     createdBy
   });
-}
-
-async function upsertDummyStudentsForClassroom(classroom, index, createdBy, count = 20) {
-  const classKey = String(classroom.year || classroom.name || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const plan = studentPlan[classKey] || { className: classKey || classroom.name, division: 'A', branch: 'CSE' };
-  const prefix = classroom.name.replace(/[^A-Z0-9]/gi, '').toUpperCase() || `CLASS${index + 1}`;
-  const created = [];
-
-  for (let rollIndex = 1; rollIndex <= count; rollIndex += 1) {
-    const rollNo = String(rollIndex).padStart(2, '0');
-    const email = `ui.${prefix.toLowerCase()}.student${rollNo.toLowerCase()}@diems.test`;
-    const prn = `UI${String(classroom.year || '00').toUpperCase().replace(/[^A-Z0-9]/g, '')}${String(index + 1).padStart(2, '0')}${rollNo}`;
-    const name = `${classroom.name} Student ${rollNo}`;
-
-    const existing = await Student.findOne({ email });
-    if (existing) {
-      existing.name = name;
-      existing.password = 'UiTest@123';
-      existing.mustChangePassword = false;
-      existing.prn = prn;
-      existing.rollNo = rollNo;
-      existing.className = plan.className;
-      existing.division = plan.division;
-      existing.branch = plan.branch;
-      existing.classroom = classroom._id;
-      existing.phone = `99999${String(index + 1).padStart(2, '0')}${rollNo}`;
-      existing.parentEmail = `parent.${prefix.toLowerCase()}.${rollNo}@diems.test`;
-      if (createdBy) existing.createdBy = createdBy;
-      await existing.save();
-      created.push(existing);
-      continue;
-    }
-
-    const duplicatePrn = await Student.findOne({ prn });
-    if (duplicatePrn) {
-      duplicatePrn.name = name;
-      duplicatePrn.email = email;
-      duplicatePrn.password = 'UiTest@123';
-      duplicatePrn.mustChangePassword = false;
-      duplicatePrn.rollNo = rollNo;
-      duplicatePrn.className = plan.className;
-      duplicatePrn.division = plan.division;
-      duplicatePrn.branch = plan.branch;
-      duplicatePrn.classroom = classroom._id;
-      duplicatePrn.phone = `99999${String(index + 1).padStart(2, '0')}${rollNo}`;
-      duplicatePrn.parentEmail = `parent.${prefix.toLowerCase()}.${rollNo}@diems.test`;
-      if (createdBy) duplicatePrn.createdBy = createdBy;
-      await duplicatePrn.save();
-      created.push(duplicatePrn);
-      continue;
-    }
-
-    const student = await Student.create({
-      name,
-      email,
-      password: 'UiTest@123',
-      mustChangePassword: false,
-      prn,
-      rollNo,
-      className: plan.className,
-      division: plan.division,
-      branch: plan.branch,
-      classroom: classroom._id,
-      phone: `99999${String(index + 1).padStart(2, '0')}${rollNo}`,
-      parentEmail: `parent.${prefix.toLowerCase()}.${rollNo}@diems.test`,
-      createdBy
-    });
-    created.push(student);
-  }
-
-  return created;
 }
 
 const buildSessionTimes = (date, startTime, endTime) => {
@@ -221,10 +272,18 @@ async function seed() {
 
     const teacher = await upsertUser(Teacher, {
       ...seedUsers.teacher,
+      password: 'diems@123',
+      branch: 'CSE',
       extra: {
         assignedClassrooms: classrooms.slice(0, 2).map((classroom) => classroom._id)
       }
     });
+
+    const seededTeachers = [];
+    for (const teacherSeed of teacherDirectorySeeds) {
+      const seededTeacher = await upsertUser(Teacher, buildTeacherSeed(teacherSeed));
+      seededTeachers.push(seededTeacher);
+    }
 
     await Subject.updateMany({ _id: { $in: subjects.map((subject) => subject._id) } }, { $set: { assignedTeacher: teacher._id } });
 
@@ -278,30 +337,40 @@ async function seed() {
     const cnTimes = buildSessionTimes(dayStart, ttCn.startTime, ttCn.endTime);
 
     await LectureSession.findOneAndUpdate(
-      { timetableEntry: ttMl._id, date: dayStart },
+      { classroom: ttMl.classroom, startDateTime: mlTimes.start },
       {
         $set: {
+          timetableEntry: ttMl._id,
+          date: dayStart,
           startDateTime: mlTimes.start,
           endDateTime: mlTimes.end,
           classroom: ttMl.classroom,
           subject: ttMl.subject,
           plannedTeacher: ttMl.plannedTeacher,
-          status: 'planned'
+          actualTeacher: null,
+          status: 'planned',
+          substitutionReason: '',
+          substitutedBy: null
         }
       },
       { upsert: true, new: true }
     );
 
     await LectureSession.findOneAndUpdate(
-      { timetableEntry: ttCn._id, date: dayStart },
+      { classroom: ttCn.classroom, startDateTime: cnTimes.start },
       {
         $set: {
+          timetableEntry: ttCn._id,
+          date: dayStart,
           startDateTime: cnTimes.start,
           endDateTime: cnTimes.end,
           classroom: ttCn.classroom,
           subject: ttCn.subject,
           plannedTeacher: ttCn.plannedTeacher,
-          status: 'planned'
+          actualTeacher: null,
+          status: 'planned',
+          substitutionReason: '',
+          substitutedBy: null
         }
       },
       { upsert: true, new: true }
@@ -309,6 +378,7 @@ async function seed() {
 
     const student = await upsertUser(Student, {
       ...seedUsers.student,
+      password: 'diems@123',
       extra: {
         prn: 'UI2026001',
         rollNo: '01',
@@ -317,25 +387,30 @@ async function seed() {
         branch: 'CSE',
         classroom: classrooms[1]._id,
         phone: '9999999999',
+        studentMobile: '9999999999',
+        parentMobile: '8888888888',
         parentEmail: 'ui.parent@diems.test'
       }
     });
 
-    const dummyStudentsByClassroom = [];
-    for (let classroomIndex = 0; classroomIndex < classrooms.length; classroomIndex += 1) {
-      const classroom = classrooms[classroomIndex];
-      const seededStudents = await upsertDummyStudentsForClassroom(classroom, classroomIndex, admin._id, 20);
-      dummyStudentsByClassroom.push({ classroom: classroom.name, students: seededStudents.length });
+    const rollCallImports = [];
+    for (const fileSeed of studentRollCallFiles) {
+      rollCallImports.push(await seedRollCallStudents(admin, fileSeed));
     }
 
     console.log('Seed complete. Created/updated:');
     console.log(`- SuperAdmin: ${superAdmin.email}`);
     console.log(`- Admin: ${admin.email}`);
     console.log(`- Teacher: ${teacher.email}`);
+    console.log(`- Additional teachers: ${seededTeachers.length}`);
+    console.log(`  ${seededTeachers.map((item) => `${item.name} <${item.email}>`).join('\n  ')}`);
     console.log(`- Student: ${student.email}`);
+    console.log(`- Roll call imports: ${rollCallImports.reduce((total, entry) => total + entry.seeded.length, 0)} students`);
+    for (const imported of rollCallImports) {
+      console.log(`  - ${imported.classroom.name}: ${imported.seeded.length} students`);
+    }
     console.log(`- Classrooms: ${classrooms.map((classroom) => classroom.name).join(', ')}`);
-    console.log(`- Subjects: ${subjects.map((subject) => subject.name).join(', ')}`);
-    console.log(`- Dummy students per class: ${dummyStudentsByClassroom.map((item) => `${item.classroom}=${item.students}`).join(', ')}`);
+    console.log(`- Subjects: ${subjects.map((subject) => `${subject.name} [${subject.category || 'lecture'}]`).join(', ')}`);
     console.log('- Timetable: 10:15-11:15 and 11:15-12:15 sessions generated for today');
     process.exit(0);
   } catch (error) {

@@ -68,7 +68,7 @@ exports.createTeacher = asyncHandler(async (req, res) => {
     throw new Error('User already exists');
   }
 
-  // Process subjects: items may be existing subject IDs (string) or objects { name, year }
+  // Process subjects: items may be existing subject IDs (string) or objects { name, year, category }
   const subjectIds = [];
   for (const subj of subjects) {
     if (typeof subj === 'string' && subj.match(/^[0-9a-fA-F]{24}$/)) {
@@ -84,17 +84,19 @@ exports.createTeacher = asyncHandler(async (req, res) => {
       const query = { name: subj.name };
       const normalizedYear = normalizeYearToNumber(subj.year);
       if (normalizedYear) query.year = normalizedYear;
+      if (subj.category) query.category = subj.category;
       let found = await Subject.findOne(query);
       if (!found) {
-        found = await Subject.create({ name: subj.name, year: normalizedYear, createdBy: req.user._id });
+        found = await Subject.create({ name: subj.name, year: normalizedYear, category: subj.category || 'lecture', createdBy: req.user._id });
       }
       subjectIds.push(found._id);
     } else if (typeof subj === 'string' && subj.trim()) {
       // Frontend sends values like "ML (Theory)"; store by name for compatibility
+      const isPractical = /\(Practical\)\s*$/i.test(subj);
       const cleanedName = subj.replace(/\s*\((Theory|Practical)\)\s*$/i, '').trim();
       let found = await Subject.findOne({ name: cleanedName });
       if (!found) {
-        found = await Subject.create({ name: cleanedName, createdBy: req.user._id });
+        found = await Subject.create({ name: cleanedName, category: isPractical ? 'practical' : 'lecture', createdBy: req.user._id });
       }
       subjectIds.push(found._id);
     }
@@ -193,6 +195,8 @@ exports.assignTeacherToSubject = asyncHandler(async (req, res) => {
 exports.createStudent = asyncHandler(async (req, res) => {
   const {
     prn,
+    collegePrn,
+    batuPrn,
     rollNo,
     name,
     firstName,
@@ -205,6 +209,8 @@ exports.createStudent = asyncHandler(async (req, res) => {
     division,
     classroom,
     phone,
+    studentMobile,
+    parentMobile,
     parentEmail
   } = req.body;
 
@@ -231,6 +237,8 @@ exports.createStudent = asyncHandler(async (req, res) => {
   const room = classroom ? await Classroom.findById(classroom) : null;
   const student = await Student.create({
     prn: resolvedPrn,
+    collegePrn,
+    batuPrn,
     rollNo,
     name: resolvedName,
     email,
@@ -239,6 +247,8 @@ exports.createStudent = asyncHandler(async (req, res) => {
     className: resolvedClassName,
     division: resolvedDivision,
     phone,
+    studentMobile,
+    parentMobile,
     parentEmail,
     branch: req.user.branch, // inherit admin's branch
     classroom: room ? room._id : undefined,
@@ -481,6 +491,8 @@ exports.updateStudent = asyncHandler(async (req, res) => {
     name,
     email,
     prn,
+    collegePrn,
+    batuPrn,
     rollNo,
     className,
     classSemester,
@@ -488,6 +500,8 @@ exports.updateStudent = asyncHandler(async (req, res) => {
     branch,
     classroom,
     phone,
+    studentMobile,
+    parentMobile,
     parentEmail,
     mustChangePassword
   } = req.body;
@@ -501,12 +515,16 @@ exports.updateStudent = asyncHandler(async (req, res) => {
   if (name !== undefined) student.name = name;
   if (email !== undefined) student.email = email;
   if (prn !== undefined) student.prn = prn;
+  if (collegePrn !== undefined) student.collegePrn = collegePrn;
+  if (batuPrn !== undefined) student.batuPrn = batuPrn;
   if (rollNo !== undefined) student.rollNo = rollNo;
   if (className !== undefined || classSemester !== undefined) student.className = className || classSemester;
   if (division !== undefined) student.division = division;
   if (branch !== undefined) student.branch = branch;
   if (classroom !== undefined) student.classroom = classroom || undefined;
   if (phone !== undefined) student.phone = phone;
+  if (studentMobile !== undefined) student.studentMobile = studentMobile;
+  if (parentMobile !== undefined) student.parentMobile = parentMobile;
   if (parentEmail !== undefined) student.parentEmail = parentEmail;
   if (mustChangePassword !== undefined) student.mustChangePassword = !!mustChangePassword;
 
