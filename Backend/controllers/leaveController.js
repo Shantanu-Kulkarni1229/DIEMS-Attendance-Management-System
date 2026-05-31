@@ -4,7 +4,7 @@ const Student = require('../models/Student');
 const Teacher = require('../models/Teacher');
 
 exports.createLeaveRequest = asyncHandler(async (req, res) => {
-  const { fromDate, toDate, duration, reason } = req.body;
+  const { fromDate, toDate, duration, leaveType, reason } = req.body;
   if (!fromDate || !toDate) {
     res.status(400);
     throw new Error('fromDate and toDate are required');
@@ -22,6 +22,7 @@ exports.createLeaveRequest = asyncHandler(async (req, res) => {
     fromDate: new Date(fromDate),
     toDate: new Date(toDate),
     duration: duration || 'Full Day',
+    leaveType,
     reason,
     status: 'Pending'
   });

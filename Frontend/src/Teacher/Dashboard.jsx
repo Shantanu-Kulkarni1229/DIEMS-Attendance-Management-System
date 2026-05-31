@@ -16,10 +16,27 @@ export default function TeacherDashboard() {
   const [showMarkAttendance, setShowMarkAttendance] = useState(false);
   const [selectedClass, setSelectedClass] = useState(null);
 
+  const mergeTeacherPayload = (dashboardPayload, contextPayload) => ({
+    ...(dashboardPayload || {}),
+    ...(contextPayload || {}),
+    teacher: dashboardPayload?.teacher || contextPayload?.teacher || null,
+    assignedClassrooms: Array.isArray(contextPayload?.assignedClassrooms) && contextPayload.assignedClassrooms.length
+      ? contextPayload.assignedClassrooms
+      : (Array.isArray(dashboardPayload?.assignedClassrooms) ? dashboardPayload.assignedClassrooms : []),
+    assignedSubjects: Array.isArray(contextPayload?.assignedSubjects) && contextPayload.assignedSubjects.length
+      ? contextPayload.assignedSubjects
+      : (Array.isArray(dashboardPayload?.assignedSubjects) ? dashboardPayload.assignedSubjects : []),
+    studentsByClassroom: contextPayload?.studentsByClassroom || dashboardPayload?.studentsByClassroom || {},
+    canMarkAttendance: !!(contextPayload?.canMarkAttendance ?? dashboardPayload?.canMarkAttendance)
+  });
+
   const refreshTeacherData = async () => {
     try {
-      const data = await get('/api/teacher/dashboard');
-      setDashboardData(data || null);
+      const [dashboardPayload, contextPayload] = await Promise.all([
+        get('/api/teacher/dashboard'),
+        get('/api/teacher/attendance-context')
+      ]);
+      setDashboardData(mergeTeacherPayload(dashboardPayload, contextPayload));
     } catch (error) {
       setDashboardData(null);
     }

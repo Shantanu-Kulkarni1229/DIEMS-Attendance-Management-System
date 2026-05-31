@@ -5,8 +5,19 @@ const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
 const TimetableEntry = require('../models/TimetableEntry');
 const AttendanceService = require('../services/attendanceService');
+const { validateManualAttendanceSlot, normalizeSessionType } = require('../utils/attendanceUtils');
 
 const isValidStatus = (status) => status === 'present' || status === 'absent';
+
+const toDayRange = (value) => {
+  const day = new Date(value);
+  if (Number.isNaN(day.getTime())) return null;
+  const start = new Date(day);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(day);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+};
 
 const validateRecordsArray = (records) => {
   if (!Array.isArray(records) || records.length === 0) return false;
@@ -27,12 +38,27 @@ const resolveTeacherClassroomIds = async (teacherId) => {
   return [...new Set(timetableClassrooms.map((id) => id.toString()))];
 };
 
+const resolveTeacherSubjectIds = async (teacherId) => {
+  const directSubjectIds = await Subject.distinct('_id', { assignedTeacher: teacherId });
+  if (directSubjectIds.length) return [...new Set(directSubjectIds.map((id) => id.toString()))];
+
+  const timetableSubjectIds = await TimetableEntry.distinct('subject', { plannedTeacher: teacherId });
+  return [...new Set(timetableSubjectIds.map((id) => id.toString()))];
+};
+
 exports.markAttendance = asyncHandler(async (req, res) => {
-  const { date, classroom, subject, records } = req.body;
+  const { date, classroom, subject, sessionType, startTime, endTime, records } = req.body;
   if (!date || !classroom || !subject || !records) {
     res.status(400);
     throw new Error('Missing attendance payload');
   }
+
+  const manualSlotCheck = validateManualAttendanceSlot({ sessionType, startTime, endTime });
+  if (!manualSlotCheck.valid) {
+    res.status(400);
+    throw new Error(manualSlotCheck.message);
+  }
+
   if (!validateRecordsArray(records)) {
     res.status(400);
     throw new Error('records must be a non-empty array of { student, status } with status present|absent');
@@ -50,8 +76,9 @@ exports.markAttendance = asyncHandler(async (req, res) => {
       throw new Error('Teacher is not assigned to this classroom');
     }
 
-    const assignedSubject = await Subject.findOne({ _id: subject, assignedTeacher: req.user._id }).select('_id');
-    if (!assignedSubject) {
+    const allowedSubjectIds = await resolveTeacherSubjectIds(req.user._id);
+    const allowedSubject = allowedSubjectIds.some((id) => id.toString() === subject.toString());
+    if (!allowedSubject) {
       res.status(403);
       throw new Error('Teacher is not assigned to this subject');
     }
@@ -69,6 +96,16 @@ exports.markAttendance = asyncHandler(async (req, res) => {
     throw new Error('One or more students do not belong to the selected classroom');
   }
 
+  const dayRange = toDayRange(date);
+  const slotFilter = {
+    date: dayRange ? { $gte: dayRange.start, $lte: dayRange.end } : new Date(date),
+    classroom,
+    subject,
+    sessionType: manualSlotCheck.sessionType,
+    startTime: manualSlotCheck.slot.startTime,
+    endTime: manualSlotCheck.slot.endTime
+  };
+
   // create attendance; unique index prevents duplicates for same date/class/subject
   let attendance;
   try {
@@ -76,13 +113,39 @@ exports.markAttendance = asyncHandler(async (req, res) => {
       date: new Date(date),
       classroom,
       subject,
+      sessionType: manualSlotCheck.sessionType,
+      startTime: manualSlotCheck.slot.startTime,
+      endTime: manualSlotCheck.slot.endTime,
       teacher: req.user._id,
       records
     });
   } catch (err) {
     if (err && err.code === 11000) {
-      res.status(409);
-      throw new Error('Attendance already exists for this date, classroom, and subject');
+      const existingAttendance = await Attendance.findOne(slotFilter).populate('teacher', 'name email');
+
+      if (existingAttendance) {
+        const existingTeacherId = existingAttendance.teacher?._id?.toString();
+        const isSameTeacher = existingTeacherId === req.user._id.toString();
+
+        if (isSameTeacher) {
+          return res.status(409).json({
+            message: 'Attendance already exists for this date, classroom, and subject',
+            canPatch: true,
+            existingAttendanceId: existingAttendance._id
+          });
+        }
+
+        return res.status(409).json({
+          message: `Attendance is already marked by ${existingAttendance.teacher?.name || 'another teacher'} for this date, classroom, and subject`,
+          canPatch: false,
+          existingAttendanceId: existingAttendance._id
+        });
+      }
+
+      return res.status(409).json({
+          message: 'Attendance already exists for this date, classroom, subject, and slot',
+        canPatch: false
+      });
     }
     throw err;
   }
@@ -188,13 +251,14 @@ exports.getTeacherAttendanceRecords = asyncHandler(async (req, res) => {
   if (req.query.classroom) query.classroom = req.query.classroom;
   if (req.query.subject) query.subject = req.query.subject;
   if (req.query.lectureSession) query.lectureSession = req.query.lectureSession;
+  if (req.query.sessionType) query.sessionType = normalizeSessionType(req.query.sessionType) || req.query.sessionType;
+  if (req.query.startTime) query.startTime = req.query.startTime;
+  if (req.query.endTime) query.endTime = req.query.endTime;
   if (req.query.date) {
-    const day = new Date(req.query.date);
-    const start = new Date(day);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(day);
-    end.setHours(23, 59, 59, 999);
-    query.date = { $gte: start, $lte: end };
+    const dayRange = toDayRange(req.query.date);
+    if (dayRange) {
+      query.date = { $gte: dayRange.start, $lte: dayRange.end };
+    }
   }
 
   const records = await Attendance.find(query)
@@ -245,9 +309,12 @@ exports.getTeacherDashboard = asyncHandler(async (req, res) => {
     ? await Student.db.model('Classroom').find({ _id: { $in: fallbackClassroomIds } }).select('name year')
     : (Array.isArray(teacher.assignedClassrooms) ? teacher.assignedClassrooms : []);
 
-  const assignedSubjects = await Subject.find({ assignedTeacher: req.user._id })
+  const resolvedSubjectIds = await resolveTeacherSubjectIds(req.user._id);
+  const assignedSubjects = resolvedSubjectIds.length
+    ? await Subject.find({ _id: { $in: resolvedSubjectIds } })
     .populate('assignedTeacher', 'name email branch')
-    .sort({ name: 1, code: 1 });
+    .sort({ name: 1, code: 1 })
+    : [];
 
   const studentEntries = await Promise.all(
     (Array.isArray(classroomDocs) ? classroomDocs : []).map(async (classroom) => {
@@ -278,7 +345,7 @@ exports.getTeacherDashboard = asyncHandler(async (req, res) => {
     studentsByClassroom,
     attendanceRecords,
     canMarkAttendance,
-    sourceOfTruth: 'subject.assignedTeacher'
+    sourceOfTruth: resolvedSubjectIds.length ? 'subject.assignedTeacher_or_timetable.plannedTeacher' : 'none'
   });
 });
 
@@ -296,9 +363,12 @@ exports.getAttendanceContext = asyncHandler(async (req, res) => {
   const assignedClassrooms = fallbackClassroomIds.length
     ? await Student.db.model('Classroom').find({ _id: { $in: fallbackClassroomIds } }).select('name year')
     : (Array.isArray(teacher.assignedClassrooms) ? teacher.assignedClassrooms : []);
-  const assignedSubjects = await Subject.find({ assignedTeacher: req.user._id })
+  const resolvedSubjectIds = await resolveTeacherSubjectIds(req.user._id);
+  const assignedSubjects = resolvedSubjectIds.length
+    ? await Subject.find({ _id: { $in: resolvedSubjectIds } })
     .populate('assignedTeacher', 'name email branch')
-    .sort({ name: 1, code: 1 });
+    .sort({ name: 1, code: 1 })
+    : [];
 
   const studentEntries = await Promise.all(
     assignedClassrooms.map(async (classroom) => {

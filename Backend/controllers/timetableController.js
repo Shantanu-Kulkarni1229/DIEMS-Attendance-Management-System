@@ -7,6 +7,7 @@ const Subject = require('../models/Subject');
 const Student = require('../models/Student');
 const Attendance = require('../models/Attendance');
 const AttendanceService = require('../services/attendanceService');
+const { normalizeSessionType } = require('../utils/attendanceUtils');
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -30,6 +31,11 @@ const endOfDay = (value) => {
 };
 
 const isValidStatus = (status) => status === 'present' || status === 'absent';
+
+const resolveSessionType = (startDateTime, endDateTime) => {
+  const durationMinutes = Math.round((new Date(endDateTime).getTime() - new Date(startDateTime).getTime()) / 60000);
+  return durationMinutes > 60 ? 'Practical' : 'Lecture';
+};
 
 const validateRecordsArray = (records) => {
   if (!Array.isArray(records) || records.length === 0) return false;
@@ -311,12 +317,18 @@ exports.markSessionAttendance = asyncHandler(async (req, res) => {
       date: session.startDateTime,
       classroom: session.classroom,
       subject: session.subject,
+      sessionType: resolveSessionType(session.startDateTime, session.endDateTime),
+      startTime: session.startDateTime.toTimeString().slice(0, 5),
+      endTime: session.endDateTime.toTimeString().slice(0, 5),
       teacher: req.user._id,
       records
     });
   } else {
     attendance.records = records;
     attendance.teacher = req.user._id;
+    attendance.sessionType = resolveSessionType(session.startDateTime, session.endDateTime);
+    attendance.startTime = session.startDateTime.toTimeString().slice(0, 5);
+    attendance.endTime = session.endDateTime.toTimeString().slice(0, 5);
     await attendance.save();
   }
 

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { markAttendance, updateAttendance, patchAttendance, getTeacherAttendanceRecords, getTeacherDashboard, getStudentsForClassroom, getAttendanceContext } = require('../controllers/teacherController');
+const { markAttendance, updateAttendance, patchAttendance, getTeacherAttendanceRecords, getTeacherDashboard, getStudentsForClassroom, getAttendanceContext, getTeacherDebug } = require('../controllers/teacherController');
 const { getTeacherLeaveRequests, reviewLeaveRequest } = require('../controllers/leaveController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorizeRoles } = require('../middleware/roleMiddleware');

@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const LeaveSchema = new mongoose.Schema({
   student: { type: mongoose.Schema.Types.ObjectId, ref: 'Student', required: true },
   classroom: { type: mongoose.Schema.Types.ObjectId, ref: 'Classroom' },
+  leaveType: { type: String, trim: true },
   fromDate: { type: Date, required: true },
   toDate: { type: Date, required: true },
   duration: { type: String, enum: ['Full Day', '1st Half', '2nd Half'], default: 'Full Day' },

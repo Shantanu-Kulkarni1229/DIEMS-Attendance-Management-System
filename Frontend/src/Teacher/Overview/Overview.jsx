@@ -74,8 +74,11 @@ const buildScheduleItems = (dashboardData) => {
   return attendanceRecords.slice(0, 4).map((record, index) => {
     const presentCount = Array.isArray(record.records) ? record.records.filter((entry) => entry.status === 'present').length : 0;
     const totalCount = Array.isArray(record.records) ? record.records.length : 0;
+    const slotLabel = record.sessionType && record.startTime && record.endTime
+      ? `${record.sessionType} • ${record.startTime} - ${record.endTime}`
+      : null;
     return {
-      time: record.date ? new Date(record.date).toLocaleDateString() : `Record ${index + 1}`,
+      time: slotLabel || (record.date ? new Date(record.date).toLocaleDateString() : `Record ${index + 1}`),
       subject: record.subject?.name ? `${record.subject.name}${record.subject.code ? ` (${record.subject.code})` : ''}` : 'Attendance record',
       class: record.classroom?.name || 'Classroom',
       status: totalCount ? `Marked ${presentCount}/${totalCount}` : 'Marked'
@@ -327,7 +330,7 @@ export default function Overview({ onMarkAttendance, profile, dashboardData, tod
                 <div className="text-right flex flex-col items-end gap-2">
                   <div>
                     <p className="text-xs font-semibold text-slate-700">{req.createdAt ? new Date(req.createdAt).toLocaleDateString() : req.date}</p>
-                    <p className="text-[10px] text-slate-500">{req.duration || req.status}</p>
+                    <p className="text-[10px] text-slate-500">{req.leaveType || req.duration || req.status}</p>
                   </div>
                   <div className="flex items-center gap-1">
                     <button type="button" onClick={() => handleLeaveAction(req._id, 'Approved')} className="w-7 h-7 rounded border border-emerald-200 text-emerald-600 hover:bg-emerald-50 flex items-center justify-center transition-colors">
