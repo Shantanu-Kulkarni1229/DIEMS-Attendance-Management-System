@@ -7,6 +7,7 @@ const Subject = require('../models/Subject');
 const Student = require('../models/Student');
 const Attendance = require('../models/Attendance');
 const AttendanceService = require('../services/attendanceService');
+const { normalizeSessionType } = require('../utils/attendanceUtils');
 
 const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
