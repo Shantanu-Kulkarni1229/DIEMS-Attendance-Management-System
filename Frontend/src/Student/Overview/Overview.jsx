@@ -97,7 +97,8 @@ export default function Overview({ attendanceData, loading, error, profile }) {
       await post('/api/student/leaves', {
         fromDate: leaveForm.fromDate,
         toDate: leaveForm.toDate,
-        duration: leaveForm.leaveType,
+        duration: 'Full Day',
+        leaveType: leaveForm.leaveType,
         reason: leaveForm.reason
       });
       setLeaveMessage('Leave request submitted successfully.');
@@ -412,7 +413,7 @@ export default function Overview({ attendanceData, loading, error, profile }) {
                 <div className="text-right flex flex-col items-end gap-1.5">
                   <div>
                     <p className="text-xs font-bold text-slate-700">{leave.createdAt ? new Date(leave.createdAt).toLocaleDateString() : leave.date}</p>
-                    <p className="text-[10px] text-slate-400">{leave.duration || leave.status}</p>
+                    <p className="text-[10px] text-slate-400">{leave.leaveType || leave.duration || leave.status}</p>
                   </div>
                   <span className={`inline-block px-3 py-0.5 rounded-full text-[10px] font-bold border ${
                     String(leave.status).toLowerCase() === 'approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :

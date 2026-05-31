@@ -1,6 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { get, patch, post } from '../../services/apiClient';
 
+const MANUAL_SLOTS = {
+  Lecture: [
+    { label: '10:15 AM – 11:15 AM', startTime: '10:15', endTime: '11:15' },
+    { label: '11:15 AM – 12:15 PM', startTime: '11:15', endTime: '12:15' },
+    { label: '1:15 PM – 2:15 PM', startTime: '13:15', endTime: '14:15' },
+    { label: '2:15 PM – 3:15 PM', startTime: '14:15', endTime: '15:15' },
+    { label: '3:30 PM – 4:30 PM', startTime: '15:30', endTime: '16:30' },
+    { label: '4:30 PM – 5:30 PM', startTime: '16:30', endTime: '17:30' }
+  ],
+  Practical: [
+    { label: '10:15 AM – 12:15 PM', startTime: '10:15', endTime: '12:15' },
+    { label: '1:15 PM – 3:15 PM', startTime: '13:15', endTime: '15:15' },
+    { label: '3:30 PM – 5:30 PM', startTime: '15:30', endTime: '17:30' }
+  ]
+};
+
 const toInputDate = (date = new Date()) => {
   const d = new Date(date);
   const y = d.getFullYear();
@@ -18,7 +34,8 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
   const [highlightedRows, setHighlightedRows] = useState([]);
   const [selectedClassroomId, setSelectedClassroomId] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
-  const [selectedSessionId, setSelectedSessionId] = useState(initialData?.sessionId || '');
+  const [sessionType, setSessionType] = useState('Lecture');
+  const [selectedSlot, setSelectedSlot] = useState(MANUAL_SLOTS.Lecture[0]);
   const [date, setDate] = useState(toInputDate());
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -87,15 +104,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
         if (preferredClassroom) setSelectedClassroomId(preferredClassroom._id);
         if (subs[0]) setSelectedSubjectId(subs[0]._id);
 
-        if (initialData && initialData.sessionId) {
-          setSelectedSessionId(initialData.sessionId);
-          if (initialData.classroomId) setSelectedClassroomId(initialData.classroomId);
-          if (initialData.subjectId) setSelectedSubjectId(initialData.subjectId);
-          if (initialData.date) setDate(toInputDate(initialData.date));
-        }
-
         // Best-effort preselect based on schedule card text.
-        // Keep this last so schedule-driven selections override the default classroom choice.
         if (initialData && initialData.class) {
           const byName = classes.find((c) => String(c.name).toLowerCase() === String(initialData.class).toLowerCase());
           if (byName) setSelectedClassroomId(byName._id);
@@ -104,6 +113,10 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
           const clean = String(initialData.subject || '').split('(')[0].trim().toLowerCase();
           const bySubject = subs.find((s) => String(s.name).trim().toLowerCase() === clean);
           if (bySubject) setSelectedSubjectId(bySubject._id);
+        }
+
+        if (initialData && initialData.date) {
+          setDate(toInputDate(initialData.date));
         }
       } catch (error) {
         setMessage({ type: 'error', text: error.message || 'Failed to load your assigned classes/subjects.' });
@@ -117,8 +130,17 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
     // stable primitive deps so effect array size/order doesn't change
     (dashboardData && Array.isArray(dashboardData.assignedClassrooms) ? dashboardData.assignedClassrooms.length : 0),
     (dashboardData && Array.isArray(dashboardData.assignedSubjects) ? dashboardData.assignedSubjects.length : 0),
-    initialData?.sessionId || null
+    initialData?.date || null,
+    initialData?.class || null,
+    initialData?.subject || null
   ]);
+
+  useEffect(() => {
+    const slots = MANUAL_SLOTS[sessionType] || MANUAL_SLOTS.Lecture;
+    if (!slots.some((slot) => slot.startTime === selectedSlot.startTime && slot.endTime === selectedSlot.endTime)) {
+      setSelectedSlot(slots[0]);
+    }
+  }, [sessionType]);
 
   useEffect(() => {
     const loadStudents = async () => {
@@ -216,16 +238,15 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
     setSaving(true);
     setMessage(null);
     try {
-      if (selectedSessionId) {
-        await post(`/api/timetable/teacher/sessions/${selectedSessionId}/attendance`, { records });
-      } else {
-        await post('/api/teacher/mark-attendance', {
-          date,
-          classroom: selectedClassroomId,
-          subject: selectedSubjectId,
-          records
-        });
-      }
+      await post('/api/teacher/mark-attendance', {
+        date,
+        classroom: selectedClassroomId,
+        subject: selectedSubjectId,
+        sessionType,
+        startTime: selectedSlot.startTime,
+        endTime: selectedSlot.endTime,
+        records
+      });
       setMessage({ type: 'success', text: 'Attendance saved successfully.' });
       if (typeof onSaved === 'function') {
         await onSaved();
@@ -236,19 +257,28 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
       const payload = error && error.payload ? error.payload : null;
       const backendMessage = payload && (payload.message || (Array.isArray(payload.errors) ? payload.errors.join('; ') : null));
 
-      if (selectedSessionId) {
-        setMessage({ type: 'error', text: backendMessage || error.message || 'Failed to save session attendance.' });
-        setSaving(false);
-        return;
-      }
-
       // If already created for this day/class/subject, patch existing record.
       if (error.status === 409) {
         try {
-          const existing = await get(`/api/teacher/attendance-records?classroom=${selectedClassroomId}&subject=${selectedSubjectId}&date=${date}`);
-          const record = Array.isArray(existing) ? existing[0] : null;
-          if (!record || !record._id) throw new Error('Existing attendance not found for patch.');
-          await patch(`/api/teacher/update-attendance/${record._id}`, { records });
+          const conflictPayload = error && error.payload ? error.payload : null;
+          const canPatch = conflictPayload ? conflictPayload.canPatch !== false : true;
+          let recordId = conflictPayload && conflictPayload.existingAttendanceId ? conflictPayload.existingAttendanceId : null;
+
+          if (!canPatch) {
+            throw new Error((conflictPayload && conflictPayload.message) || 'Attendance is already marked by another teacher for this date.');
+          }
+
+          if (!recordId) {
+            const existing = await get(`/api/teacher/attendance-records?classroom=${selectedClassroomId}&subject=${selectedSubjectId}&date=${date}&sessionType=${encodeURIComponent(sessionType)}&startTime=${selectedSlot.startTime}&endTime=${selectedSlot.endTime}`);
+            const record = Array.isArray(existing) ? existing.find((item) => item && item._id) : null;
+            recordId = record && record._id ? record._id : null;
+          }
+
+          if (!recordId) {
+            throw new Error((conflictPayload && conflictPayload.message) || 'Existing attendance not found for patch.');
+          }
+
+          await patch(`/api/teacher/update-attendance/${recordId}`, { records });
           setMessage({ type: 'success', text: 'Existing attendance updated for selected date.' });
           if (typeof onSaved === 'function') {
             await onSaved();
@@ -294,11 +324,11 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
         <div className="px-6 py-4 bg-sky-50/50 border-b border-sky-100 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Date</p>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} disabled={!!selectedSessionId} className="w-full px-3 py-2 border border-slate-200 rounded-lg disabled:bg-slate-100 disabled:text-slate-500" />
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg" />
           </div>
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Class</p>
-            <select value={selectedClassroomId} onChange={(e) => setSelectedClassroomId(e.target.value)} disabled={!!selectedSessionId} className="w-full px-3 py-2 border border-slate-200 rounded-lg disabled:bg-slate-100 disabled:text-slate-500">
+            <select value={selectedClassroomId} onChange={(e) => setSelectedClassroomId(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg">
               {classrooms.map((c) => (
                 <option key={c._id} value={c._id}>{c.name}{c.year ? ` (${c.year})` : ''}</option>
               ))}
@@ -306,9 +336,36 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
           </div>
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Subject</p>
-            <select value={selectedSubjectId} onChange={(e) => setSelectedSubjectId(e.target.value)} disabled={!!selectedSessionId} className="w-full px-3 py-2 border border-slate-200 rounded-lg disabled:bg-slate-100 disabled:text-slate-500">
+            <select value={selectedSubjectId} onChange={(e) => setSelectedSubjectId(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg">
               {subjects.map((s) => (
                 <option key={s._id} value={s._id}>{s.name}{s.code ? ` (${s.code})` : ''}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="px-6 pb-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm bg-sky-50/50 border-b border-sky-100">
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Session Type</p>
+            <select value={sessionType} onChange={(e) => setSessionType(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white">
+              <option value="Lecture">Lecture (1 Hour)</option>
+              <option value="Practical">Practical / Lab (2 Hours)</option>
+            </select>
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Time Slot</p>
+            <select
+              value={`${selectedSlot.startTime}-${selectedSlot.endTime}`}
+              onChange={(e) => {
+                const chosen = (MANUAL_SLOTS[sessionType] || []).find((slot) => `${slot.startTime}-${slot.endTime}` === e.target.value);
+                if (chosen) setSelectedSlot(chosen);
+              }}
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white"
+            >
+              {(MANUAL_SLOTS[sessionType] || []).map((slot) => (
+                <option key={`${slot.startTime}-${slot.endTime}`} value={`${slot.startTime}-${slot.endTime}`}>
+                  {slot.label}
+                </option>
               ))}
             </select>
           </div>

@@ -31,6 +31,11 @@ const endOfDay = (value) => {
 
 const isValidStatus = (status) => status === 'present' || status === 'absent';
 
+const resolveSessionType = (startDateTime, endDateTime) => {
+  const durationMinutes = Math.round((new Date(endDateTime).getTime() - new Date(startDateTime).getTime()) / 60000);
+  return durationMinutes > 60 ? 'Practical' : 'Lecture';
+};
+
 const validateRecordsArray = (records) => {
   if (!Array.isArray(records) || records.length === 0) return false;
   return records.every((r) => r && r.student && isValidStatus(r.status));
@@ -311,12 +316,18 @@ exports.markSessionAttendance = asyncHandler(async (req, res) => {
       date: session.startDateTime,
       classroom: session.classroom,
       subject: session.subject,
+      sessionType: resolveSessionType(session.startDateTime, session.endDateTime),
+      startTime: session.startDateTime.toTimeString().slice(0, 5),
+      endTime: session.endDateTime.toTimeString().slice(0, 5),
       teacher: req.user._id,
       records
     });
   } else {
     attendance.records = records;
     attendance.teacher = req.user._id;
+    attendance.sessionType = resolveSessionType(session.startDateTime, session.endDateTime);
+    attendance.startTime = session.startDateTime.toTimeString().slice(0, 5);
+    attendance.endTime = session.endDateTime.toTimeString().slice(0, 5);
     await attendance.save();
   }
 
