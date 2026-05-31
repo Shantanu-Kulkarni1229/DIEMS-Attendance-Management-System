@@ -76,9 +76,12 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
   const [selectedSlot, setSelectedSlot] = useState(MANUAL_SLOTS.Lecture[0]);
   const [selectedBatchIds, setSelectedBatchIds] = useState([]);
   const [date, setDate] = useState(toInputDate());
+  const [startTime, setStartTime] = useState(initialData?.startTime || '09:00');
+  const [endTime, setEndTime] = useState(initialData?.endTime || '10:00');
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [useDemo, setUseDemo] = useState(false);
 
   const normalizeClassroom = (item) => {
     if (!item) return null;
@@ -104,7 +107,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
         let context = null;
         try {
           context = await get('/api/teacher/attendance-context');
-        } catch (contextError) {
+        } catch (e) {
           context = null;
         }
 
@@ -113,9 +116,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
           : Array.isArray(dashboardData?.teacher?.assignedClassrooms)
             ? dashboardData.teacher.assignedClassrooms
             : [];
-        const dashboardSubjects = Array.isArray(dashboardData?.assignedSubjects)
-          ? dashboardData.assignedSubjects
-          : [];
+        const dashboardSubjects = Array.isArray(dashboardData?.assignedSubjects) ? dashboardData.assignedSubjects : [];
         const dashboardStudentsByClassroom = dashboardData?.studentsByClassroom || {};
 
         const classes = (Array.isArray(context?.assignedClassrooms) && context.assignedClassrooms.length ? context.assignedClassrooms : dashboardClasses)
@@ -124,7 +125,6 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
         const subs = (Array.isArray(context?.assignedSubjects) && context.assignedSubjects.length ? context.assignedSubjects : dashboardSubjects)
           .map(normalizeSubject)
           .filter(Boolean);
-
         setClassrooms(classes);
         setSubjects(subs);
 
@@ -186,26 +186,27 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
         return;
       }
 
+      if (useDemo) {
+        // generate 20 demo students cs3101..cs3130
+        const demo = [];
+        for (let n = 101; n <= 130; n++) {
+          const roll = `cs3${String(n)}`;
+          demo.push({ id: `demo-${roll}`, roll, name: `Student ${roll}`, present: true });
+        }
+        setStudents(demo);
+        return;
+      }
+
       const cachedStudents = studentsByClassroom[selectedClassroomId];
       if (Array.isArray(cachedStudents)) {
-        const mapped = cachedStudents.map((s) => ({
-          id: s._id,
-          roll: s.rollNo || s.prn || String(s._id).slice(-4),
-          name: s.name,
-          present: true
-        }));
+        const mapped = cachedStudents.map((s) => ({ id: s._id, roll: s.rollNo || s.prn || String(s._id).slice(-4), name: s.name, present: true }));
         setStudents(mapped);
         return;
       }
 
       try {
         const data = await get(`/api/teacher/classrooms/${selectedClassroomId}/students`);
-        const mapped = (Array.isArray(data) ? data : []).map((s) => ({
-          id: s._id,
-          roll: s.rollNo || s.prn || String(s._id).slice(-4),
-          name: s.name,
-          present: true
-        }));
+        const mapped = (Array.isArray(data) ? data : []).map((s) => ({ id: s._id, roll: s.rollNo || s.prn || String(s._id).slice(-4), name: s.name, present: true }));
         setStudents(mapped);
       } catch (error) {
         setMessage({ type: 'error', text: error.message || 'Failed to load students.' });
@@ -225,51 +226,34 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
     [subjects, selectedSubjectId]
   );
 
-  const practicalBatches = useMemo(
-    () => (sessionType === 'Practical' ? buildPracticalBatches(students, selectedClassroom?.name) : []),
-    [sessionType, students, selectedClassroom?.name]
-  );
-
-  const selectedPracticalStudents = useMemo(() => {
-    if (sessionType !== 'Practical') return students;
-    if (!selectedBatchIds.length) return [];
-    const batchSet = new Set(selectedBatchIds);
-    return practicalBatches
-      .filter((batch) => batchSet.has(batch.id))
-      .flatMap((batch) => batch.students);
-  }, [sessionType, students, practicalBatches, selectedBatchIds]);
-
-  useEffect(() => {
-    if (sessionType === 'Practical') {
-      setSelectedBatchIds(practicalBatches.map((batch) => batch.id));
-    } else {
-      setSelectedBatchIds([]);
-    }
-  }, [sessionType, practicalBatches]);
-
   const toggleAttendance = (studentId) => {
     setStudents((prev) => prev.map((s) => (s.id === studentId ? { ...s, present: !s.present } : s)));
     setHighlightedRows((prev) => prev.filter((id) => id !== studentId));
   };
 
   const applyAbsentees = () => {
-    const rollsToMarkAbsent = absentInput
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const rollsToMarkAbsent = absentInput.split(',').map((s) => s.trim()).filter(Boolean);
+    const raw = String(absentInput || '');
+    const entries = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    if (entries.length === 0) return;
 
-    if (rollsToMarkAbsent.length === 0) return;
+    // Normalize entries to lowercase and keep numeric parts for flexible matching
+    const normalized = entries.map((e) => e.toLowerCase());
+    const normalizedSet = new Set(normalized);
 
     const toHighlight = [];
-    setStudents((prev) =>
-      prev.map((s) => {
-        if (rollsToMarkAbsent.includes(String(s.roll))) {
-          toHighlight.push(s.id);
-          return { ...s, present: false };
-        }
-        return s;
-      })
-    );
+    setStudents((prev) => prev.map((s) => {
+      const roll = String(s.roll || '').toLowerCase();
+      const digitsOnly = roll.replace(/\D/g, '');
+      const last4 = roll.slice(-4);
+
+      const matches = normalizedSet.has(roll) || normalizedSet.has(digitsOnly) || normalizedSet.has(last4);
+      if (matches) {
+        toHighlight.push(s.id);
+        return { ...s, present: false };
+      }
+      return s;
+    }));
     setHighlightedRows(toHighlight);
     setAbsentInput('');
   };
@@ -279,26 +263,11 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
     setHighlightedRows([]);
   };
 
-  const toggleBatchSelection = (batchId) => {
-    setSelectedBatchIds((prev) => (
-      prev.includes(batchId) ? prev.filter((id) => id !== batchId) : [...prev, batchId]
-    ));
-  };
-
-  const selectAllBatches = () => {
-    setSelectedBatchIds(practicalBatches.map((batch) => batch.id));
-  };
-
-  const clearBatchSelection = () => {
-    setSelectedBatchIds([]);
-  };
-
   const saveAttendance = async () => {
     if (!selectedClassroomId || !selectedSubjectId || !date) {
       setMessage({ type: 'error', text: 'Please select class, subject, and date.' });
       return;
     }
-
     if (!students.length) {
       setMessage({ type: 'error', text: 'No students found for selected class.' });
       return;
@@ -329,9 +298,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
         records
       });
       setMessage({ type: 'success', text: 'Attendance saved successfully.' });
-      if (typeof onSaved === 'function') {
-        await onSaved();
-      }
+      if (typeof onSaved === 'function') await onSaved();
       setTimeout(() => onClose(), 700);
     } catch (error) {
       const payload = error && error.payload ? error.payload : null;
@@ -361,9 +328,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
 
           await patch(`/api/teacher/update-attendance/${recordId}`, { records });
           setMessage({ type: 'success', text: 'Existing attendance updated for selected date.' });
-          if (typeof onSaved === 'function') {
-            await onSaved();
-          }
+          if (typeof onSaved === 'function') await onSaved();
           setTimeout(() => onClose(), 700);
         } catch (patchError) {
           const pPayload = patchError && patchError.payload ? patchError.payload : null;
@@ -373,9 +338,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
       } else {
         setMessage({ type: 'error', text: backendMessage || error.message || 'Failed to save attendance.' });
       }
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   const presentCount = selectedPracticalStudents.filter((s) => s.present).length;
@@ -383,31 +346,33 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
   const displayedStudents = sessionType === 'Practical' ? selectedPracticalStudents : students;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[95vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[95vh] flex flex-col overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
           <div>
             <h2 className="text-xl font-bold text-slate-800">Mark Attendance</h2>
             <p className="text-sm text-slate-500 mt-0.5">Review and submit attendance</p>
           </div>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors">
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
 
-        {message && (
-          <div className={`mx-6 mt-4 p-3 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-            {message.text}
-          </div>
-        )}
+        {message && <div className={`mx-6 mt-4 p-3 rounded-lg text-sm ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>{message.text}</div>}
 
         <div className="px-6 py-4 bg-sky-50/50 border-b border-sky-100 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+          <div className="flex items-center gap-3">
+            <label className="inline-flex items-center text-sm text-slate-600">
+              <input type="checkbox" className="form-checkbox h-4 w-4 text-sky-600" checked={useDemo} onChange={(e) => setUseDemo(e.target.checked)} />
+              <span className="ml-2">Use demo class</span>
+            </label>
+          </div>
+
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Date</p>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg" />
           </div>
+
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Class</p>
             <select value={selectedClassroomId} onChange={(e) => setSelectedClassroomId(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg">
@@ -416,6 +381,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
               ))}
             </select>
           </div>
+
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Subject</p>
             <select value={selectedSubjectId} onChange={(e) => setSelectedSubjectId(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg">
@@ -503,25 +469,13 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
         )}
 
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
-          {loading ? (
-            <p className="text-sm text-slate-500">Loading classes and subjects...</p>
-          ) : (
+          {loading ? <p className="text-sm text-slate-500">Loading classes and subjects...</p> : (
             <>
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm mb-6 relative overflow-hidden">
-                <label className="block text-sm font-bold text-slate-800 mb-3 relative z-10">Quick Mark Absentees</label>
-                <div className="flex flex-col sm:flex-row gap-3 relative z-10">
-                  <div className="flex-1">
-                    <input
-                      type="text"
-                      value={absentInput}
-                      onChange={(e) => setAbsentInput(e.target.value)}
-                      placeholder="Enter roll numbers separated by commas"
-                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm"
-                    />
-                  </div>
-                  <button onClick={applyAbsentees} className="px-6 py-2 bg-slate-800 hover:bg-slate-900 text-white font-semibold text-sm rounded-lg shadow-sm transition-colors whitespace-nowrap">
-                    Apply Absentees
-                  </button>
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm mb-6">
+                <label className="block text-sm font-bold text-slate-800 mb-3">Quick Mark Absentees</label>
+                <div className="flex gap-3">
+                  <input type="text" value={absentInput} onChange={(e) => setAbsentInput(e.target.value)} placeholder="Enter roll numbers separated by commas" className="flex-1 px-4 py-2 border border-slate-300 rounded-lg" />
+                  <button onClick={applyAbsentees} className="px-6 py-2 bg-slate-800 text-white rounded-lg">Apply Absentees</button>
                 </div>
               </div>
 
@@ -529,7 +483,6 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
                 <div className="text-sm text-slate-600">
                   {selectedClassroom ? `Class: ${selectedClassroom.name}` : 'No class selected'}
                   {selectedSubject ? ` | Subject: ${selectedSubject.name}` : ''}
-                  {sessionType === 'Practical' && selectedBatchIds.length ? ` | Batches: ${selectedBatchIds.join(', ')}` : ''}
                 </div>
                 <div className="flex gap-4 text-sm font-semibold">
                   <div className="text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">Present: {presentCount}</div>
@@ -539,15 +492,11 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
 
               <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                 <table className="w-full text-left text-sm">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold sticky top-0 z-10">
-                    <tr>
-                      <th className="px-6 py-3 w-24">Roll No</th>
-                      <th className="px-6 py-3">Student Name</th>
-                      <th className="px-6 py-3 w-32 text-center">Present</th>
-                    </tr>
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
+                    <tr><th className="px-6 py-3 w-24">Roll No</th><th className="px-6 py-3">Student Name</th><th className="px-6 py-3 w-32 text-center">Present</th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {displayedStudents.map((student) => (
+                    {students.map((student) => (
                       <tr
                         key={student.id}
                         className={`hover:bg-slate-50 transition-colors cursor-pointer ${!student.present ? 'bg-red-50/30' : ''} ${highlightedRows.includes(student.id) ? 'bg-red-100/50 animate-pulse-once' : ''}`}
@@ -555,20 +504,10 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
                       >
                         <td className="px-6 py-3 font-medium text-slate-700">{student.roll}</td>
                         <td className="px-6 py-3 text-slate-800">{student.name}</td>
-                        <td className="px-6 py-3 text-center">
-                          <div className="inline-flex items-center justify-center">
-                            <div className={`w-6 h-6 rounded border flex items-center justify-center transition-colors ${student.present ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-300'}`}>
-                              {student.present && (
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                </svg>
-                              )}
-                            </div>
-                          </div>
-                        </td>
+                        <td className="px-6 py-3 text-center"><div className={`w-6 h-6 rounded border flex items-center justify-center ${student.present ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-300'}`}>{student.present && (<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>)}</div></td>
                       </tr>
                     ))}
-                    {displayedStudents.length === 0 && (
+                    {students.length === 0 && (
                       <tr>
                         <td colSpan={3} className="px-6 py-6 text-center text-slate-500">No students found for selected classroom.</td>
                       </tr>
@@ -581,21 +520,10 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
         </div>
 
         <div className="p-6 bg-white border-t border-slate-100 flex items-center justify-between">
-          <button onClick={resetAll} className="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
-            Reset All
-          </button>
-
+          <button onClick={resetAll} className="px-5 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 rounded-lg">Reset All</button>
           <div className="flex gap-3">
-            <button onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
-              Cancel
-            </button>
-            <button
-              onClick={saveAttendance}
-              disabled={saving || loading}
-              className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm shadow-blue-600/20 transition-all flex items-center gap-2 disabled:opacity-70"
-            >
-              {saving ? 'Saving...' : 'Save Attendance'}
-            </button>
+            <button onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-slate-700 rounded-lg">Cancel</button>
+            <button onClick={saveAttendance} disabled={saving || loading} className="px-6 py-2.5 text-sm font-semibold text-white bg-blue-600 rounded-lg">{saving ? 'Saving...' : 'Save Attendance'}</button>
           </div>
         </div>
       </div>
