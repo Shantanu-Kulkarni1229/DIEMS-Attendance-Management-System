@@ -27,7 +27,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
   const normalizeClassroom = (item) => {
     if (!item) return null;
     return {
-      _id: item._id || item.id,
+      _id: String(item._id || item.id),
       name: item.name || item.className || item.label || 'Classroom',
       year: item.year || item.semester || ''
     };
@@ -36,7 +36,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
   const normalizeSubject = (item) => {
     if (!item) return null;
     return {
-      _id: item._id || item.id,
+      _id: String(item._id || item.id),
       name: item.name || item.subject || 'Subject',
       code: item.code || ''
     };
@@ -70,9 +70,21 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
           .filter(Boolean);
         setClassrooms(classes);
         setSubjects(subs);
-        setStudentsByClassroom(context?.studentsByClassroom || dashboardStudentsByClassroom || {});
+        const rawStudentsMap = context?.studentsByClassroom || dashboardStudentsByClassroom || {};
+        // Normalize keys to strings to ensure lookups by normalized classroom _id succeed.
+        const studentsMap = Object.keys(rawStudentsMap || {}).reduce((acc, k) => {
+          acc[String(k)] = rawStudentsMap[k];
+          return acc;
+        }, {});
+        setStudentsByClassroom(studentsMap);
 
-        if (classes[0]) setSelectedClassroomId(classes[0]._id);
+        const preferredClassroom =
+          (initialData?.classroomId && classes.find((c) => c._id === initialData.classroomId)) ||
+          (initialData?.class && classes.find((c) => String(c.name).toLowerCase() === String(initialData.class).toLowerCase())) ||
+          classes.find((c) => Array.isArray(studentsMap[c._id]) && studentsMap[c._id].length > 0) ||
+          classes[0];
+
+        if (preferredClassroom) setSelectedClassroomId(preferredClassroom._id);
         if (subs[0]) setSelectedSubjectId(subs[0]._id);
 
         if (initialData && initialData.sessionId) {
@@ -82,7 +94,8 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
           if (initialData.date) setDate(toInputDate(initialData.date));
         }
 
-        // Best-effort preselect based on schedule card text
+        // Best-effort preselect based on schedule card text.
+        // Keep this last so schedule-driven selections override the default classroom choice.
         if (initialData && initialData.class) {
           const byName = classes.find((c) => String(c.name).toLowerCase() === String(initialData.class).toLowerCase());
           if (byName) setSelectedClassroomId(byName._id);

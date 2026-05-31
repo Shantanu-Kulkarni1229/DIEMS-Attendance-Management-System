@@ -28,12 +28,6 @@ const seedUsers = {
     email: 'ui.teacher@diems.test',
     password: 'UiTest@123',
     role: 'Teacher'
-  },
-  student: {
-    name: 'UI Student',
-    email: 'ui.student@diems.test',
-    password: 'UiTest@123',
-    role: 'Student'
   }
 };
 
@@ -59,10 +53,33 @@ const teacherDirectorySeeds = [
   { name: 'Akanksha Nagdeve', email: 'akankshanagdeve@dietms.org' }
 ];
 
+const teacherDirectoryAssignments = [
+  ['FY-A'],
+  ['SY-A'],
+  ['TY-A'],
+  ['BTECH-A'],
+  ['FY-A', 'SY-A'],
+  ['SY-A', 'TY-A'],
+  ['TY-A', 'BTECH-A'],
+  ['FY-A'],
+  ['SY-A'],
+  ['TY-A'],
+  ['BTECH-A'],
+  ['FY-A', 'TY-A'],
+  ['SY-A', 'BTECH-A'],
+  ['FY-A'],
+  ['SY-A'],
+  ['TY-A'],
+  ['BTECH-A'],
+  ['TY-A'],
+  ['SY-A']
+];
+
 const classroomSeeds = [
   { name: 'FY-A', year: 'FY' },
   { name: 'SY-A', year: 'SY' },
   { name: 'TY-A', year: 'TY' },
+  { name: 'TY-B', year: 'TY' },
   { name: 'BTECH-A', year: 'BTECH' }
 ];
 
@@ -91,17 +108,19 @@ const deprecatedSubjectNames = ['ML', 'CN', 'CD', 'E&SD', 'IOT', 'PRAC', 'CP', '
 const studentRollCallFiles = [
   {
     fileName: 'TY A Roll Call List (1).csv',
-    classroomName: 'TYCSE A',
+    classroomName: 'TY-A',
     className: 'TY',
     division: 'A'
   },
   {
     fileName: 'TY B Roll call list (1).csv',
-    classroomName: 'TYCSE B',
+    classroomName: 'TY-B',
     className: 'TY',
     division: 'B'
   }
 ];
+
+const tyStudentSeeds = new Set();
 
 async function upsertUser(Model, payload) {
   const lookup = payload.extra?.prn
@@ -186,6 +205,7 @@ async function seedRollCallStudents(admin, studentFileSeed) {
 
   const seeded = [];
   for (const row of rows) {
+    tyStudentSeeds.add(row.prn);
     const seededStudent = await upsertUser(Student, {
       name: row.name,
       email: row.email || `${row.rollNo.toLowerCase()}@dietms.org`,
@@ -211,6 +231,16 @@ async function seedRollCallStudents(admin, studentFileSeed) {
   return { classroom, seeded };
 }
 
+async function cleanupNonTyStudents() {
+  const keepEmails = new Set(['ui.teacher@diems.test']);
+  await Student.deleteMany({
+    $and: [
+      { prn: { $nin: Array.from(tyStudentSeeds) } },
+      { email: { $nin: Array.from(keepEmails) } }
+    ]
+  });
+}
+
 async function upsertClassroom(seed, createdBy) {
   const existing = await Classroom.findOne({ name: seed.name });
   if (existing) {
@@ -225,6 +255,12 @@ async function upsertClassroom(seed, createdBy) {
     year: seed.year,
     createdBy
   });
+}
+
+async function findClassroomsByNames(names) {
+  const classroomNames = Array.isArray(names) ? names : [];
+  if (!classroomNames.length) return [];
+  return Classroom.find({ name: { $in: classroomNames } });
 }
 
 async function upsertSubject(seed, createdBy) {
@@ -345,14 +381,25 @@ async function seed() {
       password: 'diems@123',
       branch: 'CSE',
       extra: {
-        assignedClassrooms: classrooms.slice(0, 2).map((classroom) => classroom._id),
+        assignedClassrooms: classrooms
+          .filter((classroom) => ['TY-A', 'TY-B'].includes(classroom.name))
+          .map((classroom) => classroom._id),
         createdBy: admin._id
       }
     });
 
     const seededTeachers = [];
-    for (const teacherSeed of teacherDirectorySeeds) {
-      const seededTeacher = await upsertUser(Teacher, buildTeacherSeed(teacherSeed));
+    for (let i = 0; i < teacherDirectorySeeds.length; i += 1) {
+      const teacherSeed = teacherDirectorySeeds[i];
+      const assignedNames = teacherDirectoryAssignments[i] || ['TY-A'];
+      const assignedClassrooms = await findClassroomsByNames(assignedNames);
+      const seededTeacher = await upsertUser(Teacher, {
+        ...buildTeacherSeed(teacherSeed),
+        extra: {
+          assignedClassrooms: assignedClassrooms.map((classroom) => classroom._id),
+          createdBy: admin._id
+        }
+      });
       seededTeachers.push(seededTeacher);
     }
 
@@ -447,27 +494,11 @@ async function seed() {
       { upsert: true, new: true }
     );
 
-    const student = await upsertUser(Student, {
-      ...seedUsers.student,
-      password: 'diems@123',
-      extra: {
-        prn: 'UI2026001',
-        rollNo: '01',
-        className: 'SY',
-        division: 'A',
-        branch: 'CSE',
-        classroom: classrooms[1]._id,
-        phone: '9999999999',
-        studentMobile: '9999999999',
-        parentMobile: '8888888888',
-        parentEmail: 'ui.parent@diems.test'
-      }
-    });
-
     const rollCallImports = [];
     for (const fileSeed of studentRollCallFiles) {
       rollCallImports.push(await seedRollCallStudents(admin, fileSeed));
     }
+    await cleanupNonTyStudents();
 
     console.log('Seed complete. Created/updated:');
     console.log(`- SuperAdmin: ${superAdmin.email}`);
@@ -475,7 +506,6 @@ async function seed() {
     console.log(`- Teacher: ${teacher.email}`);
     console.log(`- Additional teachers: ${seededTeachers.length}`);
     console.log(`  ${seededTeachers.map((item) => `${item.name} <${item.email}>`).join('\n  ')}`);
-    console.log(`- Student: ${student.email}`);
     console.log(`- Roll call imports: ${rollCallImports.reduce((total, entry) => total + entry.seeded.length, 0)} students`);
     for (const imported of rollCallImports) {
       console.log(`  - ${imported.classroom.name}: ${imported.seeded.length} students`);
