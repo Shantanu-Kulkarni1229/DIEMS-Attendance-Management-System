@@ -8,11 +8,24 @@ const AttendanceSchema = new mongoose.Schema({
   sessionType: { type: String, enum: ['Lecture', 'Practical'], default: null },
   startTime: { type: String, trim: true, default: null },
   endTime: { type: String, trim: true, default: null },
+  practicalBatchIds: [{ type: String, trim: true }],
+  practicalBatchSnapshot: [
+    {
+      batchId: { type: String, trim: true },
+      label: { type: String, trim: true },
+      startRoll: { type: String, trim: true },
+      endRoll: { type: String, trim: true },
+      studentIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+      studentCount: { type: Number, default: 0 }
+    }
+  ],
   teacher: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   records: [
     {
       student: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-      status: { type: String, enum: ['present', 'absent'], required: true }
+      status: { type: String, enum: ['present', 'absent'], required: true },
+      leaveId: { type: mongoose.Schema.Types.ObjectId, ref: 'Leave', default: null },
+      attendanceSource: { type: String, enum: ['manual', 'leave'], default: 'manual' }
     }
   ]
 }, { timestamps: true });

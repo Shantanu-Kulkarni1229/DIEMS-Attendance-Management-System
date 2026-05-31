@@ -11,23 +11,42 @@ const formatClock = (value) => {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
-const getLectureTiming = (record) => {
-  if (record?.startTime || record?.endTime) {
-    return `${record?.startTime || '--'} - ${record?.endTime || '--'}`;
-  }
-
-  const start = record?.lectureSession?.startDateTime;
-  const end = record?.lectureSession?.endDateTime;
-  if (start || end) {
-    return `${formatClock(start)} - ${formatClock(end)}`;
-  }
-
-  return 'Timing unavailable';
+const formatDateHeader = (value = new Date()) => {
+  return new Date(value).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric', weekday: 'long' });
 };
 
-export default function Overview({ profile, dashboardData, loading = false, theme = 'light' }) {
+const leaveRequestsFallback = [
+  { initials: "AS", name: "Aniket Shinde", classInfo: "SYA - ML (Theory)", date: "21 May 2025", duration: "Full Day", color: "bg-blue-100 text-blue-700" },
+  { initials: "PR", name: "Prajakta Rajput", classInfo: "TYB - CN (Theory)", date: "22 May 2025", duration: "1st Half", color: "bg-purple-100 text-purple-700" },
+  { initials: "SK", name: "Sahil Kale", classInfo: "SYB - IOT (Theory)", date: "23 May 2025", duration: "Full Day", color: "bg-orange-100 text-orange-700" },
+];
 
-  const assignedClassrooms = Array.isArray(dashboardData?.assignedClassrooms) ? dashboardData.assignedClassrooms : [];
+const formatFileSize = (value) => {
+  if (!value || Number.isNaN(Number(value))) return '';
+  const size = Number(value);
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const quickActions = [
+  { title: "Mark Attendance", subtitle: "Mark attendance for your classes", icon: "📅", color: "text-blue-600" },
+  { title: "Edit Attendance", subtitle: "Edit or update existing records", icon: "✏️", color: "text-emerald-600" },
+  { title: "Approve Leave", subtitle: "Review and approve student leaves", icon: "👤", color: "text-orange-600" },
+  { title: "View Reports", subtitle: "View attendance reports & analytics", icon: "📄", color: "text-purple-600" },
+];
+
+const weeklyOverview = [
+  { day: "Mon", date: "19 May", fraction: "4/4", status: "Marked", color: "text-emerald-600" },
+  { day: "Tue", date: "20 May", fraction: "3/4", status: "Marked", color: "text-emerald-600" },
+  { day: "Wed", date: "21 May", fraction: "2/4", status: "Marked", color: "text-emerald-600", active: true },
+  { day: "Thu", date: "22 May", fraction: "0/4", status: "Pending", color: "text-orange-500" },
+  { day: "Fri", date: "23 May", fraction: "0/4", status: "Pending", color: "text-orange-500" },
+  { day: "Sat", date: "24 May", fraction: "-", status: "No Classes", color: "text-slate-400" },
+  { day: "Sun", date: "25 May", fraction: "-", status: "No Classes", color: "text-slate-400" },
+];
+
+const buildTeacherStats = (dashboardData) => {
   const assignedSubjects = Array.isArray(dashboardData?.assignedSubjects) ? dashboardData.assignedSubjects : [];
   const attendanceRecords = Array.isArray(dashboardData?.attendanceRecords) ? dashboardData.attendanceRecords : [];
   // Compute weighted overall attendance: total present across all sheets / total students across all sheets
@@ -128,19 +147,30 @@ export default function Overview({ profile, dashboardData, loading = false, them
             <div className="px-5 py-4 border-b border-slate-100">
               <h2 className="text-base font-bold text-slate-800">Assigned Subjects</h2>
             </div>
-            <div className="p-4 space-y-2 max-h-72 overflow-y-auto">
-              {loading ? (
-                [0,1,2,3].map((i) => <SkeletonCard key={i} className="h-12" />)
-              ) : (
-                (assignedSubjects.length ? assignedSubjects.map((item) => (
-                  <div key={item._id} className="px-3 py-2.5 rounded-lg bg-slate-50 border border-slate-200 text-sm text-slate-700">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-semibold text-slate-800">{item.name}</p>
-                      <span className={`text-[10px] uppercase tracking-wide font-bold px-2 py-0.5 rounded-full ${(item.category || 'lecture') === 'practical' ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700'}`}>
-                        {(item.category || 'lecture') === 'practical' ? 'Practical' : 'Theory'}
+          )}
+
+          <div className="flex-1 space-y-4">
+            {leaveItems.map((req, i) => (
+              <div key={i} className="flex items-start gap-4 pb-4 border-b border-slate-100 last:border-0 last:pb-0">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${req.color || 'bg-slate-100 text-slate-700'}`}>
+                  {req.initials || String(req.student?.name || req.name || 'L').slice(0, 2).toUpperCase()}
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-bold text-slate-800">{req.student?.name || req.name}</h4>
+                  <p className="text-xs text-slate-500 mt-0.5">{req.classroom?.name || req.classInfo}</p>
+                  {req.attachmentUrl && (
+                    <a href={req.attachmentUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700">
+                      View Attachment
+                      <span className="text-[10px] text-slate-400">
+                        {req.attachmentName ? `${req.attachmentName}${req.attachmentSize ? ` · ${formatFileSize(req.attachmentSize)}` : ''}` : ''}
                       </span>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-0.5">{item.code || 'No code'}</p>
+                    </a>
+                  )}
+                </div>
+                <div className="text-right flex flex-col items-end gap-2">
+                  <div>
+                    <p className="text-xs font-semibold text-slate-700">{req.createdAt ? new Date(req.createdAt).toLocaleDateString() : req.date}</p>
+                    <p className="text-[10px] text-slate-500">{req.leaveType || req.duration || req.status}</p>
                   </div>
                 )) : <p className="text-sm text-slate-500 px-1">No assigned subjects found.</p>)
               )}

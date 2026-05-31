@@ -137,3 +137,54 @@ exports.MANUAL_SLOTS = MANUAL_SLOTS;
 exports.normalizeSessionType = normalizeSessionType;
 exports.getManualSlot = getManualSlot;
 exports.validateManualAttendanceSlot = validateManualAttendanceSlot;
+
+const DEFAULT_BATCH_SIZE = 20;
+
+const compareRollNumbers = (left, right) => String(left || '').localeCompare(String(right || ''), undefined, { numeric: true, sensitivity: 'base' });
+
+const getBatchPrefix = (classroomName = '') => {
+  const normalized = String(classroomName || '').trim();
+  const suffixMatch = normalized.match(/([A-Z])\s*(?:\([^)]*\))?$/i);
+  if (suffixMatch && suffixMatch[1]) return suffixMatch[1].toUpperCase();
+  if (normalized.includes('-')) {
+    const lastPart = normalized.split('-').pop().trim();
+    if (lastPart) return lastPart.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'A';
+  }
+  return 'A';
+};
+
+const normalizeBatchSize = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) return DEFAULT_BATCH_SIZE;
+  return parsed;
+};
+
+const buildPracticalBatches = (students = [], classroomName = '', batchSize = DEFAULT_BATCH_SIZE) => {
+  const size = normalizeBatchSize(batchSize);
+  const sortedStudents = [...students].sort((left, right) => compareRollNumbers(left.rollNo || left.roll, right.rollNo || right.roll));
+  const prefix = getBatchPrefix(classroomName);
+  const batches = [];
+
+  sortedStudents.forEach((student, index) => {
+    const batchIndex = Math.floor(index / size);
+    if (!batches[batchIndex]) {
+      batches[batchIndex] = {
+        batchId: `${prefix}-${batchIndex + 1}`,
+        label: `${prefix}-${batchIndex + 1}`,
+        startRoll: student.rollNo || student.roll || '',
+        endRoll: student.rollNo || student.roll || '',
+        studentIds: [],
+        studentCount: 0
+      };
+    }
+
+    batches[batchIndex].studentIds.push(student._id.toString());
+    batches[batchIndex].studentCount += 1;
+    batches[batchIndex].endRoll = student.rollNo || student.roll || batches[batchIndex].endRoll;
+  });
+
+  return batches.filter(Boolean);
+};
+
+exports.buildPracticalBatches = buildPracticalBatches;
+exports.normalizeBatchSize = normalizeBatchSize;

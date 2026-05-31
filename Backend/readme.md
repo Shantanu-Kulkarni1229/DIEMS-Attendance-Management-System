@@ -10,7 +10,27 @@ The backend currently supports a manual attendance workflow rather than requirin
 - Lecture attendance uses fixed 1-hour slots
 - Practical/Lab attendance uses fixed 2-hour slots
 - Attendance records store `sessionType`, `startTime`, and `endTime`
+- Practical attendance stores selected batch ids plus a backend-generated batch snapshot
 - Leave requests store the leave category separately from the enum-safe `duration` field
+- Practical batch size is configurable per classroom, so Admin can set 10, 15, 20, or any other valid size
+- Leave requests can store cloud attachment metadata such as an uploaded sick-note URL
+- Approved leave requests are synced back into attendance records for the matching classroom/date/session slot
+- Cloudinary is integrated for leave attachments via a protected student upload endpoint
+
+### Why Practical Batches Are Stored Server-Side
+
+- Practical batch grouping is still generated in the UI for convenience, but it is no longer trusted as the source of truth
+- The backend validates the selected batch ids before saving attendance so the payload cannot drift from the actual classroom roster
+- The backend batch size comes from the classroom configuration, not a hardcoded constant
+- The saved batch snapshot captures the exact batch boundaries and student membership used when attendance was taken
+- This keeps practical attendance auditable, reproducible, and safe even if the class list changes later
+- It also makes the system easier to scale because reports and future features can read the stored snapshot instead of rebuilding the grouping logic from scratch
+
+### Leave Attachments And Attendance Sync
+
+- The backend stores leave attachment metadata and the actual file lives in Cloudinary
+- If a teacher approves a leave, the backend will sync that leave into the relevant attendance record(s) for the student, classroom, date, and time slot
+- The current backend supports the data model and sync logic; the frontend now has the upload control, and the classroom batch-size editor remains to be added
 
 ## Overview
 

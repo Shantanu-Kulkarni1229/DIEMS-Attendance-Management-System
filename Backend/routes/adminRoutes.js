@@ -8,6 +8,7 @@ const {
 	getTeachers,
 	getStudents,
 	getClassrooms,
+	updateClassroom,
 	getSubjects,
 	getOverviewStats,
 	getReports,
@@ -37,6 +38,7 @@ router.delete('/students/:studentId', protect, authorizeRoles('SuperAdmin', 'Adm
 router.get('/overview-stats', protect, authorizeRoles('SuperAdmin', 'Admin'), getOverviewStats);
 router.get('/reports', protect, authorizeRoles('SuperAdmin', 'Admin'), getReports);
 router.get('/classrooms', protect, authorizeRoles('SuperAdmin', 'Admin', 'Teacher', 'Student'), getClassrooms);
+router.patch('/classrooms/:classroomId', protect, authorizeRoles('SuperAdmin', 'Admin'), updateClassroom);
 router.get('/subjects', protect, authorizeRoles('SuperAdmin', 'Admin', 'Teacher', 'Student'), getSubjects);
 
 module.exports = router;
