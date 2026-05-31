@@ -10,7 +10,16 @@ The backend currently supports a manual attendance workflow rather than requirin
 - Lecture attendance uses fixed 1-hour slots
 - Practical/Lab attendance uses fixed 2-hour slots
 - Attendance records store `sessionType`, `startTime`, and `endTime`
+- Practical attendance stores selected batch ids plus a backend-generated batch snapshot
 - Leave requests store the leave category separately from the enum-safe `duration` field
+
+### Why Practical Batches Are Stored Server-Side
+
+- Practical batch grouping is still generated in the UI for convenience, but it is no longer trusted as the source of truth
+- The backend validates the selected batch ids before saving attendance so the payload cannot drift from the actual classroom roster
+- The saved batch snapshot captures the exact batch boundaries and student membership used when attendance was taken
+- This keeps practical attendance auditable, reproducible, and safe even if the class list changes later
+- It also makes the system easier to scale because reports and future features can read the stored snapshot instead of rebuilding the grouping logic from scratch
 
 ## Overview
 

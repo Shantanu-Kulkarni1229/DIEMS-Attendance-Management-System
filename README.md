@@ -10,7 +10,18 @@ The system is working around a manual attendance workflow:
 - Lecture slots are fixed to 1 hour
 - Practical/Lab slots are fixed to 2 hours
 - Attendance is stored against the selected time range, not a timetable lecture number
+- Practical attendance stores the selected batch ids and a server-side batch snapshot for auditability
 - Student leave requests store the leave category separately from the enum-safe duration field
+
+### Practical Batch Reasoning
+
+Practical batches are now treated as a real part of attendance data, not just a visual grouping in the UI.
+
+- The frontend still groups students into 20-student practical batches so teachers can select batches quickly while taking attendance
+- The backend now validates those batch ids before saving attendance, so the record cannot rely on a browser-only grouping
+- The backend also stores a batch snapshot with the attendance record, which preserves the exact batch composition used that day
+- This makes the system scalable because future reports, edits, and audits can use stored data instead of recreating the batch logic from the frontend
+- This also protects attendance history if the classroom roster changes later, because the saved snapshot keeps the original practical grouping intact
 
 ## Assistant Context
 

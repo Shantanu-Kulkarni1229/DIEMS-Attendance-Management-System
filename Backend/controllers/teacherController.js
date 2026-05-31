@@ -3,9 +3,10 @@ const Attendance = require('../models/Attendance');
 const Subject = require('../models/Subject');
 const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
+const Classroom = require('../models/Classroom');
 const TimetableEntry = require('../models/TimetableEntry');
 const AttendanceService = require('../services/attendanceService');
-const { validateManualAttendanceSlot, normalizeSessionType } = require('../utils/attendanceUtils');
+const { validateManualAttendanceSlot, normalizeSessionType, buildPracticalBatches } = require('../utils/attendanceUtils');
 
 const isValidStatus = (status) => status === 'present' || status === 'absent';
 
@@ -47,7 +48,7 @@ const resolveTeacherSubjectIds = async (teacherId) => {
 };
 
 exports.markAttendance = asyncHandler(async (req, res) => {
-  const { date, classroom, subject, sessionType, startTime, endTime, records } = req.body;
+  const { date, classroom, subject, sessionType, startTime, endTime, records, practicalBatchIds } = req.body;
   if (!date || !classroom || !subject || !records) {
     res.status(400);
     throw new Error('Missing attendance payload');
@@ -63,6 +64,10 @@ exports.markAttendance = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error('records must be a non-empty array of { student, status } with status present|absent');
   }
+
+  const selectedPracticalBatchIds = Array.isArray(practicalBatchIds)
+    ? [...new Set(practicalBatchIds.map((id) => String(id).trim()).filter(Boolean))]
+    : [];
 
   if (req.user.role === 'Teacher') {
     const allowedClassroomIds = await resolveTeacherClassroomIds(req.user._id);
@@ -90,6 +95,34 @@ exports.markAttendance = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error('Duplicate student entries found in attendance records');
   }
+
+  let practicalBatchSnapshot = [];
+  let practicalAllowedStudentIds = null;
+  if (manualSlotCheck.sessionType === 'Practical') {
+    if (!selectedPracticalBatchIds.length) {
+      res.status(400);
+      throw new Error('At least one practical batch must be selected');
+    }
+
+    const classroomDoc = await Classroom.findById(classroom).select('name');
+    const classroomStudents = await Student.find({ classroom }).select('_id rollNo').sort({ rollNo: 1 }).lean();
+    const allPracticalBatches = buildPracticalBatches(classroomStudents, classroomDoc?.name);
+    const batchMap = new Map(allPracticalBatches.map((batch) => [batch.batchId, batch]));
+    const invalidBatchIds = selectedPracticalBatchIds.filter((batchId) => !batchMap.has(batchId));
+    if (invalidBatchIds.length) {
+      res.status(400);
+      throw new Error(`Invalid practical batch selection: ${invalidBatchIds.join(', ')}`);
+    }
+
+    practicalBatchSnapshot = selectedPracticalBatchIds.map((batchId) => batchMap.get(batchId));
+    practicalAllowedStudentIds = new Set(practicalBatchSnapshot.flatMap((batch) => batch.studentIds.map(String)));
+    const allSelectedStudentIds = uniqueStudentIds.every((studentId) => practicalAllowedStudentIds.has(String(studentId)));
+    if (!allSelectedStudentIds) {
+      res.status(400);
+      throw new Error('One or more students do not belong to the selected practical batches');
+    }
+  }
+
   const studentsInClassroom = await Student.countDocuments({ _id: { $in: uniqueStudentIds }, classroom });
   if (studentsInClassroom !== uniqueStudentIds.length) {
     res.status(400);
@@ -116,6 +149,8 @@ exports.markAttendance = asyncHandler(async (req, res) => {
       sessionType: manualSlotCheck.sessionType,
       startTime: manualSlotCheck.slot.startTime,
       endTime: manualSlotCheck.slot.endTime,
+      practicalBatchIds: selectedPracticalBatchIds,
+      practicalBatchSnapshot,
       teacher: req.user._id,
       records
     });

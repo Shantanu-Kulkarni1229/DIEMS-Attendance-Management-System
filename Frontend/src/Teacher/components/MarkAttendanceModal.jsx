@@ -3,19 +3,21 @@ import { get, patch, post } from '../../services/apiClient';
 
 const MANUAL_SLOTS = {
   Lecture: [
-    { label: '10:15 AM – 11:15 AM', startTime: '10:15', endTime: '11:15' },
-    { label: '11:15 AM – 12:15 PM', startTime: '11:15', endTime: '12:15' },
-    { label: '1:15 PM – 2:15 PM', startTime: '13:15', endTime: '14:15' },
-    { label: '2:15 PM – 3:15 PM', startTime: '14:15', endTime: '15:15' },
-    { label: '3:30 PM – 4:30 PM', startTime: '15:30', endTime: '16:30' },
-    { label: '4:30 PM – 5:30 PM', startTime: '16:30', endTime: '17:30' }
+    { label: '10:15 AM - 11:15 AM', startTime: '10:15', endTime: '11:15' },
+    { label: '11:15 AM - 12:15 PM', startTime: '11:15', endTime: '12:15' },
+    { label: '1:15 PM - 2:15 PM', startTime: '13:15', endTime: '14:15' },
+    { label: '2:15 PM - 3:15 PM', startTime: '14:15', endTime: '15:15' },
+    { label: '3:30 PM - 4:30 PM', startTime: '15:30', endTime: '16:30' },
+    { label: '4:30 PM - 5:30 PM', startTime: '16:30', endTime: '17:30' }
   ],
   Practical: [
-    { label: '10:15 AM – 12:15 PM', startTime: '10:15', endTime: '12:15' },
-    { label: '1:15 PM – 3:15 PM', startTime: '13:15', endTime: '15:15' },
-    { label: '3:30 PM – 5:30 PM', startTime: '15:30', endTime: '17:30' }
+    { label: '10:15 AM - 12:15 PM', startTime: '10:15', endTime: '12:15' },
+    { label: '1:15 PM - 3:15 PM', startTime: '13:15', endTime: '15:15' },
+    { label: '3:30 PM - 5:30 PM', startTime: '15:30', endTime: '17:30' }
   ]
 };
+
+const BATCH_SIZE = 20;
 
 const toInputDate = (date = new Date()) => {
   const d = new Date(date);
@@ -23,6 +25,42 @@ const toInputDate = (date = new Date()) => {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+};
+
+const compareRollNumbers = (left, right) => String(left || '').localeCompare(String(right || ''), undefined, { numeric: true, sensitivity: 'base' });
+
+const getBatchPrefix = (classroomName = '') => {
+  const normalized = String(classroomName || '').trim();
+  const suffixMatch = normalized.match(/([A-Z])\s*(?:\([^)]*\))?$/i);
+  if (suffixMatch && suffixMatch[1]) return suffixMatch[1].toUpperCase();
+  if (normalized.includes('-')) {
+    const lastPart = normalized.split('-').pop().trim();
+    if (lastPart) return lastPart.replace(/[^A-Za-z0-9]/g, '').toUpperCase() || 'A';
+  }
+  return 'A';
+};
+
+const buildPracticalBatches = (students = [], classroomName = '') => {
+  const sortedStudents = [...students].sort((left, right) => compareRollNumbers(left.roll, right.roll));
+  const prefix = getBatchPrefix(classroomName);
+  const batches = [];
+
+  sortedStudents.forEach((student, index) => {
+    const batchIndex = Math.floor(index / BATCH_SIZE);
+    if (!batches[batchIndex]) {
+      batches[batchIndex] = {
+        id: `${prefix}-${batchIndex + 1}`,
+        label: `${prefix}-${batchIndex + 1}`,
+        startRoll: student.roll,
+        endRoll: student.roll,
+        students: []
+      };
+    }
+    batches[batchIndex].students.push(student);
+    batches[batchIndex].endRoll = student.roll;
+  });
+
+  return batches.filter(Boolean);
 };
 
 export default function MarkAttendanceModal({ onClose, initialData, onSaved, dashboardData }) {
@@ -36,6 +74,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
   const [sessionType, setSessionType] = useState('Lecture');
   const [selectedSlot, setSelectedSlot] = useState(MANUAL_SLOTS.Lecture[0]);
+  const [selectedBatchIds, setSelectedBatchIds] = useState([]);
   const [date, setDate] = useState(toInputDate());
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -85,12 +124,13 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
         const subs = (Array.isArray(context?.assignedSubjects) && context.assignedSubjects.length ? context.assignedSubjects : dashboardSubjects)
           .map(normalizeSubject)
           .filter(Boolean);
+
         setClassrooms(classes);
         setSubjects(subs);
+
         const rawStudentsMap = context?.studentsByClassroom || dashboardStudentsByClassroom || {};
-        // Normalize keys to strings to ensure lookups by normalized classroom _id succeed.
-        const studentsMap = Object.keys(rawStudentsMap || {}).reduce((acc, k) => {
-          acc[String(k)] = rawStudentsMap[k];
+        const studentsMap = Object.keys(rawStudentsMap || {}).reduce((acc, key) => {
+          acc[String(key)] = rawStudentsMap[key];
           return acc;
         }, {});
         setStudentsByClassroom(studentsMap);
@@ -104,18 +144,16 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
         if (preferredClassroom) setSelectedClassroomId(preferredClassroom._id);
         if (subs[0]) setSelectedSubjectId(subs[0]._id);
 
-        // Best-effort preselect based on schedule card text.
-        if (initialData && initialData.class) {
+        if (initialData?.class) {
           const byName = classes.find((c) => String(c.name).toLowerCase() === String(initialData.class).toLowerCase());
           if (byName) setSelectedClassroomId(byName._id);
         }
-        if (initialData && initialData.subject) {
+        if (initialData?.subject) {
           const clean = String(initialData.subject || '').split('(')[0].trim().toLowerCase();
           const bySubject = subs.find((s) => String(s.name).trim().toLowerCase() === clean);
           if (bySubject) setSelectedSubjectId(bySubject._id);
         }
-
-        if (initialData && initialData.date) {
+        if (initialData?.date) {
           setDate(toInputDate(initialData.date));
         }
       } catch (error) {
@@ -127,7 +165,6 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
 
     loadInit();
   }, [
-    // stable primitive deps so effect array size/order doesn't change
     (dashboardData && Array.isArray(dashboardData.assignedClassrooms) ? dashboardData.assignedClassrooms.length : 0),
     (dashboardData && Array.isArray(dashboardData.assignedSubjects) ? dashboardData.assignedSubjects.length : 0),
     initialData?.date || null,
@@ -140,7 +177,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
     if (!slots.some((slot) => slot.startTime === selectedSlot.startTime && slot.endTime === selectedSlot.endTime)) {
       setSelectedSlot(slots[0]);
     }
-  }, [sessionType]);
+  }, [sessionType, selectedSlot.startTime, selectedSlot.endTime]);
 
   useEffect(() => {
     const loadStudents = async () => {
@@ -188,9 +225,31 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
     [subjects, selectedSubjectId]
   );
 
+  const practicalBatches = useMemo(
+    () => (sessionType === 'Practical' ? buildPracticalBatches(students, selectedClassroom?.name) : []),
+    [sessionType, students, selectedClassroom?.name]
+  );
+
+  const selectedPracticalStudents = useMemo(() => {
+    if (sessionType !== 'Practical') return students;
+    if (!selectedBatchIds.length) return [];
+    const batchSet = new Set(selectedBatchIds);
+    return practicalBatches
+      .filter((batch) => batchSet.has(batch.id))
+      .flatMap((batch) => batch.students);
+  }, [sessionType, students, practicalBatches, selectedBatchIds]);
+
+  useEffect(() => {
+    if (sessionType === 'Practical') {
+      setSelectedBatchIds(practicalBatches.map((batch) => batch.id));
+    } else {
+      setSelectedBatchIds([]);
+    }
+  }, [sessionType, practicalBatches]);
+
   const toggleAttendance = (studentId) => {
     setStudents((prev) => prev.map((s) => (s.id === studentId ? { ...s, present: !s.present } : s)));
-    setHighlightedRows((prev) => prev.filter((r) => r !== studentId));
+    setHighlightedRows((prev) => prev.filter((id) => id !== studentId));
   };
 
   const applyAbsentees = () => {
@@ -220,17 +279,38 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
     setHighlightedRows([]);
   };
 
+  const toggleBatchSelection = (batchId) => {
+    setSelectedBatchIds((prev) => (
+      prev.includes(batchId) ? prev.filter((id) => id !== batchId) : [...prev, batchId]
+    ));
+  };
+
+  const selectAllBatches = () => {
+    setSelectedBatchIds(practicalBatches.map((batch) => batch.id));
+  };
+
+  const clearBatchSelection = () => {
+    setSelectedBatchIds([]);
+  };
+
   const saveAttendance = async () => {
     if (!selectedClassroomId || !selectedSubjectId || !date) {
       setMessage({ type: 'error', text: 'Please select class, subject, and date.' });
       return;
     }
+
     if (!students.length) {
       setMessage({ type: 'error', text: 'No students found for selected class.' });
       return;
     }
 
-    const records = students.map((s) => ({
+    if (sessionType === 'Practical' && !selectedPracticalStudents.length) {
+      setMessage({ type: 'error', text: 'Please select at least one practical batch.' });
+      return;
+    }
+
+    const attendanceStudents = sessionType === 'Practical' ? selectedPracticalStudents : students;
+    const records = attendanceStudents.map((s) => ({
       student: s.id,
       status: s.present ? 'present' : 'absent'
     }));
@@ -245,6 +325,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
         sessionType,
         startTime: selectedSlot.startTime,
         endTime: selectedSlot.endTime,
+        practicalBatchIds: sessionType === 'Practical' ? selectedBatchIds : [],
         records
       });
       setMessage({ type: 'success', text: 'Attendance saved successfully.' });
@@ -253,11 +334,9 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
       }
       setTimeout(() => onClose(), 700);
     } catch (error) {
-      // prefer backend-sent structured messages when present
       const payload = error && error.payload ? error.payload : null;
       const backendMessage = payload && (payload.message || (Array.isArray(payload.errors) ? payload.errors.join('; ') : null));
 
-      // If already created for this day/class/subject, patch existing record.
       if (error.status === 409) {
         try {
           const conflictPayload = error && error.payload ? error.payload : null;
@@ -269,7 +348,9 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
           }
 
           if (!recordId) {
-            const existing = await get(`/api/teacher/attendance-records?classroom=${selectedClassroomId}&subject=${selectedSubjectId}&date=${date}&sessionType=${encodeURIComponent(sessionType)}&startTime=${selectedSlot.startTime}&endTime=${selectedSlot.endTime}`);
+            const existing = await get(
+              `/api/teacher/attendance-records?classroom=${selectedClassroomId}&subject=${selectedSubjectId}&date=${date}&sessionType=${encodeURIComponent(sessionType)}&startTime=${selectedSlot.startTime}&endTime=${selectedSlot.endTime}`
+            );
             const record = Array.isArray(existing) ? existing.find((item) => item && item._id) : null;
             recordId = record && record._id ? record._id : null;
           }
@@ -297,8 +378,9 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
     }
   };
 
-  const presentCount = students.filter((s) => s.present).length;
-  const absentCount = students.length - presentCount;
+  const presentCount = selectedPracticalStudents.filter((s) => s.present).length;
+  const absentCount = selectedPracticalStudents.length - presentCount;
+  const displayedStudents = sessionType === 'Practical' ? selectedPracticalStudents : students;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
@@ -371,6 +453,55 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
           </div>
         </div>
 
+        {sessionType === 'Practical' && (
+          <div className="px-6 pb-4 bg-sky-50/50 border-b border-sky-100">
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Practical Batches</p>
+                  <p className="text-sm text-slate-600">Select one or more batches for this lab session</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={selectAllBatches} className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-colors">
+                    Select All
+                  </button>
+                  <button type="button" onClick={clearBatchSelection} className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 text-slate-600 bg-slate-50 hover:bg-slate-100 transition-colors">
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              {practicalBatches.length ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {practicalBatches.map((batch) => {
+                    const isSelected = selectedBatchIds.includes(batch.id);
+                    return (
+                      <button
+                        key={batch.id}
+                        type="button"
+                        onClick={() => toggleBatchSelection(batch.id)}
+                        className={`text-left rounded-xl border px-4 py-3 transition-all ${isSelected ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="font-bold text-slate-800">{batch.label}</p>
+                            <p className="text-xs text-slate-500">Rolls {batch.startRoll} - {batch.endRoll}</p>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                            {batch.students.length}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">No students available to build practical batches.</p>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
           {loading ? (
             <p className="text-sm text-slate-500">Loading classes and subjects...</p>
@@ -398,6 +529,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
                 <div className="text-sm text-slate-600">
                   {selectedClassroom ? `Class: ${selectedClassroom.name}` : 'No class selected'}
                   {selectedSubject ? ` | Subject: ${selectedSubject.name}` : ''}
+                  {sessionType === 'Practical' && selectedBatchIds.length ? ` | Batches: ${selectedBatchIds.join(', ')}` : ''}
                 </div>
                 <div className="flex gap-4 text-sm font-semibold">
                   <div className="text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">Present: {presentCount}</div>
@@ -415,7 +547,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {students.map((student) => (
+                    {displayedStudents.map((student) => (
                       <tr
                         key={student.id}
                         className={`hover:bg-slate-50 transition-colors cursor-pointer ${!student.present ? 'bg-red-50/30' : ''} ${highlightedRows.includes(student.id) ? 'bg-red-100/50 animate-pulse-once' : ''}`}
@@ -436,7 +568,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
                         </td>
                       </tr>
                     ))}
-                    {students.length === 0 && (
+                    {displayedStudents.length === 0 && (
                       <tr>
                         <td colSpan={3} className="px-6 py-6 text-center text-slate-500">No students found for selected classroom.</td>
                       </tr>
