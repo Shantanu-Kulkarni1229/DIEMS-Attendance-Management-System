@@ -2,10 +2,9 @@ import { useState } from 'react';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import Overview from './Overview/Dashboard';
-import Timetable from './Timetable/Timetable';
 import CreateTeacher from './CreateTeacher/index';
 import CreateStudent from './CreateStudent/index';
-import Reports from './Reports/index';
+import DetailedAttendance from './Reports/index';
 
 export default function Admin() {
   const [currentPage, setCurrentPage] = useState('overview');
@@ -15,21 +14,19 @@ export default function Admin() {
     switch (currentPage) {
       case 'overview':
         return <Overview />;
-      case 'timetable':
-        return <Timetable />;
+      case 'detailed-attendance':
+        return <DetailedAttendance />;
       case 'create-teacher':
         return <CreateTeacher />;
       case 'create-student':
         return <CreateStudent />;
-      case 'reports':
-        return <Reports />;
       default:
         return <Overview />;
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-sky-50 flex">
+    <div className="min-h-screen bg-white flex">
       {/* Sidebar */}
       <Sidebar currentPage={currentPage} setCurrentPage={setCurrentPage} sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
 
@@ -39,7 +36,7 @@ export default function Admin() {
         <Navbar setSidebarOpen={setSidebarOpen} sidebarOpen={sidebarOpen} />
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto bg-gradient-to-br from-blue-50 via-white to-sky-50 p-8">
+        <main className="flex-1 overflow-auto bg-white p-8">
           {renderPage()}
         </main>
 

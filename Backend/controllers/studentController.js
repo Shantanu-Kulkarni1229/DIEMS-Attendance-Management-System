@@ -12,8 +12,11 @@ exports.getAttendance = asyncHandler(async (req, res) => {
     throw new Error('Student not found');
   }
   // fetch attendance records where student appears
-  const records = await Attendance.find({ 'records.student': userId }).populate('subject');
+  const records = await Attendance.find({ 'records.student': userId })
+    .populate('subject')
+    .populate('classroom')
+    .populate('lectureSession');
   const credits = await AttendanceCredit.find({ student: userId }).populate('subject');
   const summary = AttendanceUtils.calculateStudentAttendance(userId, records, credits);
-  res.json({ classroom: student.classroom, attendance: summary });
+  res.json({ classroom: student.classroom, attendance: summary, records });
 });

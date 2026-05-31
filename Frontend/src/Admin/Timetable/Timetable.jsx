@@ -34,7 +34,7 @@ export default function Timetable() {
     if (!substituteFor || !subTeacherId) return;
     setActionLoading(true);
     try {
-      await substituteLecture(substituteFor._id, { teacherId: subTeacherId });
+      await substituteLecture(substituteFor._id, { actualTeacherId: subTeacherId });
       await load();
       setSubstituteFor(null);
     } catch (err) {

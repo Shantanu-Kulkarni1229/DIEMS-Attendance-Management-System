@@ -20,14 +20,18 @@ exports.uploadLeaveAttachment = asyncHandler(async (req, res) => {
     throw new Error('attachment file is required');
   }
 
-  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+  const folder = process.env.CLOUDINARY_LEAVE_FOLDER || 'diems/leave-attachments';
+  const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET;
+
+  if (!uploadPreset) {
     res.status(500);
-    throw new Error('Cloudinary is not configured');
+    throw new Error('Cloudinary upload preset is not configured');
   }
 
   const result = await uploadBufferToCloudinary(req.file.buffer, {
-    folder: process.env.CLOUDINARY_LEAVE_FOLDER || 'diems/leave-attachments',
-    resource_type: 'auto'
+    folder,
+    resource_type: 'auto',
+    upload_preset: uploadPreset
   });
 
   res.status(201).json({

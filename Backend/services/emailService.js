@@ -23,6 +23,17 @@ const sendEmail = async ({ to, subject, text, html }) => {
 
 const sendTeacherCredentials = async (params) => {
   const { teacherEmail, teacherName, temporaryPassword, loginLink } = params;
+  const textTemplate = [
+    `Dear ${teacherName},`,
+    '',
+    'Your teacher account has been created.',
+    `Login email: ${teacherEmail}`,
+    `Temporary password: ${temporaryPassword}`,
+    `Login link: ${loginLink}`,
+    '',
+    'Use your email address and temporary password to log in, then change your password after the first login.'
+  ].join('\n');
+
   const htmlTemplate = [
     '<html><head><style>',
     'body { font-family: Arial, sans-serif; background: #f5f5f5; }',
@@ -38,7 +49,7 @@ const sendTeacherCredentials = async (params) => {
     '<p>Dear <strong>' + teacherName + '</strong>,</p>',
     '<p>Your account has been successfully created. Below are your login credentials:</p>',
     '<div class="info-box">',
-    '<p><strong>Email:</strong> ' + teacherEmail + '</p>',
+    '<p><strong>Login Email:</strong> ' + teacherEmail + '</p>',
     '<p><strong>Temporary Password:</strong> ' + temporaryPassword + '</p>',
     '</div>',
     '<p><strong>Next Steps:</strong></p>',
@@ -50,6 +61,7 @@ const sendTeacherCredentials = async (params) => {
   return await sendEmail({ 
     to: teacherEmail, 
     subject: 'Welcome to DIEMS Attendance Management - Your Login Credentials', 
+    text: textTemplate,
     html: htmlTemplate 
   });
 };

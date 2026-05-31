@@ -2,10 +2,19 @@ const asyncHandler = require('express-async-handler');
 const Attendance = require('../models/Attendance');
 const Leave = require('../models/Leave');
 const LectureSession = require('../models/LectureSession');
+const Classroom = require('../models/Classroom');
 const Student = require('../models/Student');
 const Teacher = require('../models/Teacher');
 const AttendanceService = require('../services/attendanceService');
-const { doesLeaveCoverAttendance, toDateRange, applyLeaveToAttendanceRecords } = require('../utils/leaveAttendanceUtils');
+const { doesLeaveCoverAttendance, toDateRange, applyLeaveToAttendanceRecords, normalizeLeaveDuration } = require('../utils/leaveAttendanceUtils');
+
+const isPastDateOnly = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return date.getTime() < today.getTime();
+};
 
 const syncApprovedLeaveToAttendance = async (leave) => {
   const dateRange = toDateRange(leave.fromDate, leave.toDate);
@@ -37,11 +46,61 @@ const syncApprovedLeaveToAttendance = async (leave) => {
   }
 };
 
+const getLeaveRecipientTeachers = async (leave) => {
+  const dateRange = toDateRange(leave.fromDate, leave.toDate);
+  if (!dateRange) return [];
+
+  const attendanceRecords = await Attendance.find({
+    classroom: leave.classroom,
+    date: { $gte: dateRange.start, $lte: dateRange.end }
+  })
+    .select('teacher date sessionType startTime endTime classroom subject')
+    .populate('teacher', 'name email role');
+
+  const recipients = new Map();
+  for (const attendance of attendanceRecords) {
+    if (!doesLeaveCoverAttendance({
+      duration: leave.duration,
+      sessionType: attendance.sessionType,
+      startTime: attendance.startTime,
+      endTime: attendance.endTime
+    })) {
+      continue;
+    }
+
+    const teacher = attendance.teacher;
+    if (teacher && teacher._id) {
+      recipients.set(teacher._id.toString(), teacher);
+    }
+  }
+
+  return [...recipients.values()];
+};
+
 exports.createLeaveRequest = asyncHandler(async (req, res) => {
-  const { fromDate, toDate, duration, leaveType, reason, attachmentUrl, attachmentPublicId, attachmentName, attachmentType, attachmentSize } = req.body;
-  if (!fromDate || !toDate) {
+  const { leaveDate, fromDate, toDate, duration, leaveType, reason, attachmentUrl, attachmentPublicId, attachmentName, attachmentType, attachmentSize } = req.body;
+  const resolvedFromDate = leaveDate || fromDate;
+  const resolvedToDate = leaveDate || toDate;
+  const resolvedDuration = normalizeLeaveDuration(duration);
+
+  if (!resolvedFromDate || !resolvedToDate) {
     res.status(400);
-    throw new Error('fromDate and toDate are required');
+    throw new Error('leaveDate or fromDate/toDate are required');
+  }
+
+  if (!isPastDateOnly(resolvedFromDate) || !isPastDateOnly(resolvedToDate)) {
+    res.status(400);
+    throw new Error('Leave requests can only be submitted for past dates');
+  }
+
+  if (new Date(resolvedToDate).getTime() < new Date(resolvedFromDate).getTime()) {
+    res.status(400);
+    throw new Error('toDate must be on or after fromDate');
+  }
+
+  if (!Array.isArray(resolvedDuration) || !resolvedDuration.length) {
+    res.status(400);
+    throw new Error('Invalid leave time slot');
   }
 
   const student = await Student.findById(req.user._id).select('classroom');
@@ -53,9 +112,9 @@ exports.createLeaveRequest = asyncHandler(async (req, res) => {
   const leave = await Leave.create({
     student: student._id,
     classroom: student.classroom,
-    fromDate: new Date(fromDate),
-    toDate: new Date(toDate),
-    duration: duration || 'Full Day',
+    fromDate: new Date(resolvedFromDate),
+    toDate: new Date(resolvedToDate),
+    duration: resolvedDuration,
     leaveType,
     reason,
     attachmentUrl,
@@ -66,12 +125,45 @@ exports.createLeaveRequest = asyncHandler(async (req, res) => {
     status: 'Pending'
   });
 
+  const recipients = await getLeaveRecipientTeachers(leave);
+  const studentDoc = await Student.findById(student._id).select('name rollNo prn className division email classroom');
+  const classroomDoc = await Classroom.findById(student.classroom).select('name year');
+
   res.status(201).json(leave);
+
+  try {
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('leave:new', {
+        leaveId: leave._id,
+        recipientTeacherIds: recipients.map((teacher) => teacher._id.toString()),
+        teacherEmails: recipients.map((teacher) => teacher.email).filter(Boolean),
+        student: studentDoc,
+        classroom: classroomDoc,
+        leave: {
+          _id: leave._id,
+          fromDate: leave.fromDate,
+          toDate: leave.toDate,
+          duration: leave.duration,
+          leaveType: leave.leaveType,
+          reason: leave.reason,
+          attachmentUrl: leave.attachmentUrl,
+          attachmentName: leave.attachmentName,
+          status: leave.status,
+          createdAt: leave.createdAt
+        }
+      });
+    }
+  } catch (error) {
+    console.warn('Failed to emit leave creation event', error && error.message);
+  }
 });
 
 exports.getMyLeaveRequests = asyncHandler(async (req, res) => {
   const leaves = await Leave.find({ student: req.user._id })
     .sort({ createdAt: -1 })
+    .populate('student', 'name rollNo prn email className division')
+    .populate('classroom', 'name year')
     .populate('reviewedBy', 'name email role');
   res.status(200).json(leaves);
 });

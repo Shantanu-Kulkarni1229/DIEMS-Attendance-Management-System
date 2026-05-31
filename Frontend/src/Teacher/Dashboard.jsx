@@ -6,7 +6,26 @@ import LeaveRequests from './LeaveRequests';
 import AttendanceRecords from './AttendanceRecords';
 import PasswordSetupModal from './components/PasswordSetupModal';
 import MarkAttendanceModal from './components/MarkAttendanceModal';
-import { get } from '../services/apiClient';
+import { get, API_BASE } from '../services/apiClient';
+import { io } from 'socket.io-client';
+
+const leaveSlotLabels = {
+  'Full Day': 'Full Day',
+  '10:15': '10:15 AM - 11:15 AM',
+  '11:15': '11:15 AM - 12:15 PM',
+  '13:15': '1:15 PM - 2:15 PM',
+  '14:15': '2:15 PM - 3:15 PM',
+  '15:30': '3:30 PM - 4:30 PM',
+  '16:30': '4:30 PM - 5:30 PM'
+};
+
+const formatLeaveSlots = (value) => {
+  if (Array.isArray(value)) {
+    if (value.includes('Full Day')) return 'Full Day';
+    return value.map((slot) => leaveSlotLabels[slot] || slot).join(', ');
+  }
+  return leaveSlotLabels[value] || value || 'Full Day';
+};
 
 export default function TeacherDashboard() {
   const [currentPage, setCurrentPage] = useState('dashboard');
@@ -19,6 +38,8 @@ export default function TeacherDashboard() {
   const [showMarkAttendance, setShowMarkAttendance] = useState(false);
   const [selectedClass, setSelectedClass] = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem('teacher-theme') || 'light');
+  const [leaveNotice, setLeaveNotice] = useState(null);
+  const [leaveRequestsRefreshTick, setLeaveRequestsRefreshTick] = useState(0);
 
   const mergeTeacherPayload = (dashboardPayload, contextPayload) => ({
     ...(dashboardPayload || {}),
@@ -75,6 +96,29 @@ export default function TeacherDashboard() {
     localStorage.setItem('teacher-theme', theme);
   }, [theme]);
 
+  useEffect(() => {
+    const teacherId = profile?._id || profile?.id;
+    if (!teacherId) return undefined;
+
+    const socket = io(API_BASE, { transports: ['websocket', 'polling'] });
+
+    socket.on('leave:new', (payload) => {
+      const recipients = Array.isArray(payload?.recipientTeacherIds) ? payload.recipientTeacherIds.map(String) : [];
+      if (!recipients.includes(String(teacherId))) return;
+
+      setLeaveNotice(payload);
+      setLeaveRequestsRefreshTick((value) => value + 1);
+    });
+
+    return () => socket.disconnect();
+  }, [profile?._id, profile?.id]);
+
+  useEffect(() => {
+    if (!leaveNotice) return undefined;
+    const timer = setTimeout(() => setLeaveNotice(null), 6000);
+    return () => clearTimeout(timer);
+  }, [leaveNotice]);
+
   const handleMarkAttendance = (classItem = null) => {
     setSelectedClass(classItem);
     setShowMarkAttendance(true);
@@ -107,7 +151,7 @@ export default function TeacherDashboard() {
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
           <div className="max-w-7xl mx-auto">
             {currentPage === 'dashboard' && <Overview onMarkAttendance={handleMarkAttendance} profile={profile} dashboardData={dashboardData} todaySessions={todaySessions} loading={dashboardLoading} theme={theme} />}
-            {currentPage === 'leave-requests' && <LeaveRequests onChanged={refreshTeacherData} loading={dashboardLoading} theme={theme} />}
+            {currentPage === 'leave-requests' && <LeaveRequests onChanged={refreshTeacherData} loading={dashboardLoading} theme={theme} refreshToken={leaveRequestsRefreshTick} />}
             {currentPage === 'attendance-theory' && <AttendanceRecords dashboardData={dashboardData} mode="lecture" loading={dashboardLoading} theme={theme} />}
             {currentPage === 'attendance-practical' && <AttendanceRecords dashboardData={dashboardData} mode="practical" loading={dashboardLoading} theme={theme} />}
             {/* Placeholder for other pages */}
@@ -123,6 +167,19 @@ export default function TeacherDashboard() {
           </div>
         </main>
       </div>
+
+      {leaveNotice && (
+        <div className={`fixed right-4 top-20 z-50 max-w-sm rounded-2xl border px-4 py-3 shadow-lg ${theme === 'dark' ? 'border-slate-700 bg-slate-900 text-slate-100' : 'border-slate-200 bg-white text-slate-800'}`}>
+          <p className="text-sm font-semibold">New leave request</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {leaveNotice.student?.name || 'Student'} • {leaveNotice.classroom?.name || 'Class'} • {formatLeaveSlots(leaveNotice.leave?.duration)}
+          </p>
+          <p className="mt-2 text-xs text-slate-500">{leaveNotice.leave?.reason || 'No reason provided'}</p>
+          <button type="button" onClick={() => { setCurrentPage('leave-requests'); setLeaveNotice(null); }} className="mt-3 text-xs font-semibold text-blue-600 hover:text-blue-700">
+            View leave requests
+          </button>
+        </div>
+      )}
 
       {showMarkAttendance && (
         <MarkAttendanceModal 

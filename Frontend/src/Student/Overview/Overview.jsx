@@ -1,513 +1,329 @@
-import React, { useEffect, useState } from 'react';
-import { get, post, getStudentTodayLectures, uploadLeaveAttachment, API_BASE } from '../../services/apiClient';
-import { io } from 'socket.io-client';
+import { useEffect, useMemo, useState } from 'react';
+import { getStudentTodayLectures } from '../../services/apiClient';
 
-const defaultSubjects = [
-  { name: 'Machine Learning (ML)', classes: 30, present: 26, absent: 4, percentage: 86.7, status: 'Good' },
-  { name: 'Computer Networks (CN)', classes: 28, present: 21, absent: 7, percentage: 75.0, status: 'Good' },
-  { name: 'Data Communication (DC)', classes: 28, present: 17, absent: 11, percentage: 60.7, status: 'Average' },
-  { name: 'Internet of Things (IOT)', classes: 26, present: 14, absent: 12, percentage: 53.8, status: 'Low' },
-  { name: 'Cyber Security (CS)', classes: 24, present: 12, absent: 12, percentage: 50.0, status: 'Low' },
-];
-
-const recentLeaves = [
-  { initials: 'PR', name: 'Prajakta Rajput', type: 'Sick Leave', date: '17 May 2025', duration: 'Full Day', status: 'Approved', color: 'bg-purple-100 text-purple-700' },
-  { initials: 'SK', name: 'Sahil Kale', type: 'Personal Leave', date: '10 May 2025', duration: 'Half Day', status: 'Approved', color: 'bg-orange-100 text-orange-700' },
-  { initials: 'AS', name: 'You', type: 'Medical Leave', date: '05 May 2025', duration: 'Full Day', status: 'Pending', color: 'bg-blue-100 text-blue-700' },
-];
-
-const getStatusColor = (status) => {
-  if (status === 'Good') return 'text-emerald-600 bg-emerald-50 border-emerald-200';
-  if (status === 'Average') return 'text-yellow-600 bg-yellow-50 border-yellow-200';
-  return 'text-red-600 bg-red-50 border-red-200';
+const attendanceBand = (percentage) => {
+  if (percentage >= 75) return { label: 'Strong', message: 'On track' };
+  if (percentage >= 60) return { label: 'Watch', message: 'Close' };
+  return { label: 'Low', message: 'Alert' };
 };
 
-const getStatusTextColor = (status) => {
-  if (status === 'Good') return 'text-emerald-600';
-  if (status === 'Average') return 'text-yellow-600';
-  return 'text-red-600';
+const formatPercentage = (value) => `${Number.isFinite(value) ? value.toFixed(1) : '0.0'}%`;
+
+const formatDateTime = (value) => {
+  if (!value) return 'Not scheduled';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Not scheduled';
+  return date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 };
+
+const formatTime = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const normalizeLecture = (lecture) => ({
+  id: lecture?._id || lecture?.sessionId || lecture?.attendanceId,
+  subject: lecture?.lectureSession?.subject || lecture?.subject,
+  classroom: lecture?.lectureSession?.classroom || lecture?.classroom,
+  startDateTime: lecture?.lectureSession?.startDateTime || lecture?.startDateTime || lecture?.date,
+  endDateTime: lecture?.lectureSession?.endDateTime || lecture?.endDateTime,
+  status: lecture?.lectureSession?.status || lecture?.status || 'scheduled'
+});
+
+const getSubjectName = (subject) => subject?.name || subject || 'Unknown subject';
+
+const getClassroomName = (classroom) => classroom?.name || classroom || 'Unknown classroom';
 
 export default function Overview({ attendanceData, loading, error, profile }) {
   const user = profile || JSON.parse(localStorage.getItem('user') || '{}');
-  const overall = attendanceData?.attendance?.overall;
-  const apiSubjects = attendanceData?.attendance?.subjects;
-  const [leaveForm, setLeaveForm] = useState({ leaveType: 'Sick Leave', fromDate: '', toDate: '', reason: '' });
-  const [attachmentState, setAttachmentState] = useState({ uploading: false, fileName: '', url: '', publicId: '', type: '', size: 0 });
-  const [leaveHistory, setLeaveHistory] = useState([]);
-  const [recentLectures, setRecentLectures] = useState([]);
-  const [leaveMessage, setLeaveMessage] = useState('');
-  const [leaveLoading, setLeaveLoading] = useState(false);
-  const [attachmentMessage, setAttachmentMessage] = useState('');
+  const [todayLectures, setTodayLectures] = useState([]);
+  const [lectureError, setLectureError] = useState('');
+  const [currentTime] = useState(() => new Date().getTime());
 
   useEffect(() => {
-    const socket = io(API_BASE);
-    socket.on('connect', () => {
-      // console.log('socket connected', socket.id);
-    });
+    let active = true;
 
-    socket.on('leave:updated', (payload) => {
-      if (!payload) return;
-      // For testing: refresh leaves on any update event
-      (async () => {
-        try {
-          const updated = await get('/api/student/leaves');
-          setLeaveHistory(Array.isArray(updated) ? updated : []);
-        } catch (e) {}
-      })();
-    });
-
-    return () => socket.disconnect();
-
-    const loadLeaves = async () => {
-      try {
-        const data = await get('/api/student/leaves');
-        setLeaveHistory(Array.isArray(data) ? data : []);
-      } catch (err) {
-        setLeaveHistory([]);
-      }
-    };
-    loadLeaves();
     const loadLectures = async () => {
       try {
         const data = await getStudentTodayLectures();
-        setRecentLectures(Array.isArray(data) ? data : []);
-      } catch (err) {
-        setRecentLectures([]);
+        if (!active) return;
+        setTodayLectures(Array.isArray(data) ? data : []);
+      } catch (fetchError) {
+        if (!active) return;
+        setTodayLectures([]);
+        setLectureError(fetchError.message || 'Failed to load today\'s lectures.');
       }
     };
+
     loadLectures();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const normalizeLecture = (lec) => ({
-    _id: lec?._id || lec?.attendanceId,
-    sessionId: lec?.lectureSession?._id || lec?.sessionId,
-    subject: lec?.lectureSession?.subject || lec?.subject,
-    classroom: lec?.lectureSession?.classroom || lec?.classroom,
-    startDateTime: lec?.lectureSession?.startDateTime || lec?.startDateTime || lec?.date,
-    status: lec?.lectureSession?.status || lec?.status || 'scheduled'
-  });
+  const attendance = attendanceData?.attendance || {};
+  const overall = attendance.overall || {};
+  const subjects = useMemo(() => (Array.isArray(attendance.subjects) ? attendance.subjects : []), [attendance.subjects]);
 
-  const total = overall?.total || 0;
-  const present = overall?.present || 0;
-  const absent = Math.max(0, total - present);
-  const overallPercentage = typeof overall?.percentage === 'number' ? overall.percentage : 0;
+  const overallPercentage = Number.isFinite(Number(overall.percentage)) ? Number(overall.percentage) : 0;
+  const totalClasses = Number.isFinite(Number(overall.total)) ? Number(overall.total) : 0;
+  const presentClasses = Number.isFinite(Number(overall.present)) ? Number(overall.present) : 0;
+  const absentClasses = Math.max(0, totalClasses - presentClasses);
+  const subjectCount = subjects.length;
 
-  const status = overallPercentage >= 75 ? 'Good' : overallPercentage >= 60 ? 'Average' : 'Low';
-  const tableSubjects = Array.isArray(apiSubjects) && apiSubjects.length
-    ? apiSubjects.map((s) => ({
-      name: s.subject,
-      classes: s.total,
-      present: s.present,
-      absent: Math.max(0, s.total - s.present),
-      percentage: s.percentage,
-      status: s.percentage >= 75 ? 'Good' : s.percentage >= 60 ? 'Average' : 'Low'
-    }))
-    : defaultSubjects;
+  const subjectRows = useMemo(() => {
+    return subjects
+      .map((subject) => {
+        const total = Number.isFinite(Number(subject.total)) ? Number(subject.total) : 0;
+        const present = Number.isFinite(Number(subject.present)) ? Number(subject.present) : 0;
+        const percentage = Number.isFinite(Number(subject.percentage)) ? Number(subject.percentage) : 0;
+        return {
+          name: subject.subject,
+          total,
+          present,
+          absent: Math.max(0, total - present),
+          percentage,
+          status: percentage >= 75 ? 'On track' : percentage >= 60 ? 'Watch' : 'Needs attention'
+        };
+      })
+      .sort((left, right) => right.percentage - left.percentage);
+  }, [subjects]);
 
-  const handleLeaveSubmit = async (e) => {
-    e.preventDefault();
-    setLeaveMessage('');
-    if (!leaveForm.fromDate || !leaveForm.toDate) {
-      setLeaveMessage('Please select from and to dates.');
-      return;
-    }
+  const strongestSubject = subjectRows[0] || null;
+  const weakestSubject = subjectRows.length ? subjectRows[subjectRows.length - 1] : null;
+  const attentionSubjects = subjectRows.filter((subject) => subject.percentage < 75).slice(0, 3);
+  const band = attendanceBand(overallPercentage);
 
-    setLeaveLoading(true);
-    try {
-      await post('/api/student/leaves', {
-        fromDate: leaveForm.fromDate,
-        toDate: leaveForm.toDate,
-        duration: 'Full Day',
-        leaveType: leaveForm.leaveType,
-        reason: leaveForm.reason,
-        attachmentUrl: attachmentState.url || '',
-        attachmentPublicId: attachmentState.publicId || '',
-        attachmentName: attachmentState.fileName || '',
-        attachmentType: attachmentState.type || '',
-        attachmentSize: attachmentState.size || 0
-      });
-      setLeaveMessage('Leave request submitted successfully.');
-      setLeaveForm({ leaveType: 'Sick Leave', fromDate: '', toDate: '', reason: '' });
-      setAttachmentState({ uploading: false, fileName: '', url: '', publicId: '', type: '', size: 0 });
-      setAttachmentMessage('');
-      const updated = await get('/api/student/leaves');
-      setLeaveHistory(Array.isArray(updated) ? updated : []);
-    } catch (err) {
-      setLeaveMessage(err.message || 'Failed to submit leave request.');
-    } finally {
-      setLeaveLoading(false);
-    }
-  };
+  const lectureRows = useMemo(() => {
+    return todayLectures
+      .map(normalizeLecture)
+      .sort((left, right) => new Date(left.startDateTime || 0) - new Date(right.startDateTime || 0));
+  }, [todayLectures]);
 
-  const handleAttachmentChange = async (event) => {
-    const file = event.target.files && event.target.files[0];
-    setAttachmentMessage('');
-
-    if (!file) return;
-
-    setAttachmentState({ uploading: true, fileName: file.name, url: '', publicId: '', type: file.type, size: file.size });
-
-    try {
-      const result = await uploadLeaveAttachment(file);
-      setAttachmentState({
-        uploading: false,
-        fileName: result.originalName || file.name,
-        url: result.url || '',
-        publicId: result.publicId || '',
-        type: result.fileType || file.type,
-        size: result.fileSize || file.size
-      });
-      setAttachmentMessage('Attachment uploaded and ready to submit.');
-    } catch (err) {
-      setAttachmentState({ uploading: false, fileName: '', url: '', publicId: '', type: '', size: 0 });
-      setAttachmentMessage(err.message || 'Failed to upload attachment.');
-      event.target.value = '';
-    }
-  };
+  const nextLecture = lectureRows.find((lecture) => lecture.startDateTime && new Date(lecture.startDateTime).getTime() >= currentTime) || lectureRows[0] || null;
 
   return (
     <div className="space-y-6">
-      
-      {/* Top Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-          Welcome back, {user.name || 'Student'} <span className="text-2xl animate-wave origin-bottom-right">👋</span>
-        </h1>
-        <p className="text-slate-500 mt-1">Here's your attendance overview and academic snapshot.</p>
-        {loading && <p className="text-sm text-slate-500 mt-2">Loading attendance data...</p>}
-        {!loading && error && <p className="text-sm text-red-600 mt-2">{error}</p>}
-      </div>
+      <div className="relative overflow-hidden rounded-4xl border border-white/70 bg-white/80 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)] backdrop-blur-xl md:p-8">
+        <div className="absolute inset-0 bg-linear-to-br from-sky-50 via-white to-cyan-50" />
+        <div className="absolute -right-20 -top-20 h-56 w-56 rounded-full bg-sky-200/30 blur-3xl" />
+        <div className="absolute -bottom-24 left-24 h-56 w-56 rounded-full bg-teal-200/20 blur-3xl" />
 
-      {/* Top Analytics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        
-        {/* Card 1: Overall Attendance */}
-        <div className="bg-white/90 backdrop-blur rounded-2xl p-6 border border-white shadow-sm flex flex-col items-center justify-center text-center hover:shadow-md transition-shadow relative overflow-hidden group">
-          <p className="text-sm font-bold text-slate-700 mb-4 absolute top-4 left-6">Overall Attendance</p>
-          
-          <div className="relative w-32 h-32 mt-6 mb-4 group-hover:scale-105 transition-transform">
-            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="40" fill="transparent" stroke="#f1f5f9" strokeWidth="8" />
-              <circle cx="50" cy="50" r="40" fill="transparent" stroke="#10b981" strokeWidth="8" strokeDasharray="251.2" strokeDashoffset={251.2 - (251.2 * (overallPercentage / 100 || 0))} strokeLinecap="round" className="transition-all duration-1000 ease-out" />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <span className="text-2xl font-bold text-slate-800">{overallPercentage.toFixed(1)}%</span>
+        <div className="relative grid gap-8 lg:grid-cols-[minmax(0,1.25fr)_minmax(260px,0.75fr)] lg:items-center">
+          <div className="space-y-5">
+            <div className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-slate-500 shadow-sm">
+              Student Overview
             </div>
-          </div>
-          
-          <h4 className={`font-bold ${getStatusTextColor(status)}`}>{status}</h4>
-          <p className="text-xs text-slate-500 mt-1">You are maintaining<br/>excellent attendance!</p>
-        </div>
-
-        {/* Card 2: Total Classes */}
-        <div className="bg-white/90 backdrop-blur rounded-2xl p-6 border border-white shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-center w-12 h-12 bg-blue-50 text-blue-600 rounded-xl mb-4 mx-auto md:mx-0">
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-          </div>
-          <p className="text-sm font-bold text-slate-700 text-center md:text-left">Total Classes</p>
-          <div className="mt-2 text-center md:text-left">
-            <h3 className="text-3xl font-bold text-slate-800">{total}</h3>
-            <p className="text-xs font-medium text-slate-500 mt-0.5">Classes Conducted</p>
-          </div>
-          
-          <div className="mt-6 flex justify-between pt-4 border-t border-slate-100">
-            <div className="text-center">
-              <p className="text-xs font-semibold text-slate-500 mb-1">Present</p>
-              <p className="text-lg font-bold text-slate-800">{present}</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs font-semibold text-slate-500 mb-1">Absent</p>
-              <p className="text-lg font-bold text-red-500">{absent}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Card 3: Attendance This Month */}
-        <div className="bg-white/90 backdrop-blur rounded-2xl p-6 border border-white shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-          <div>
-            <div className="flex justify-between items-start mb-2">
-              <p className="text-sm font-bold text-slate-700">Attendance This Month</p>
-              <span className="px-2 py-0.5 bg-yellow-50 text-yellow-600 border border-yellow-200 rounded-md text-[10px] font-bold">Average</span>
-            </div>
-            <h3 className="text-3xl font-bold text-slate-800">72.4%</h3>
-          </div>
-          
-          <div className="h-16 mt-4 relative w-full overflow-hidden">
-            <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 100">
-              <path d="M0,100 L0,70 Q10,60 20,70 T40,60 T60,80 T80,50 T100,40 L100,100 Z" fill="url(#yellowGradient)" opacity="0.3" />
-              <path d="M0,70 Q10,60 20,70 T40,60 T60,80 T80,50 T100,40" fill="none" stroke="#eab308" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              <defs>
-                <linearGradient id="yellowGradient" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#fef08a" />
-                  <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-            </svg>
-          </div>
-          
-          <p className="text-xs font-semibold text-emerald-600 mt-2 flex items-center gap-1">
-            4.2% <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg> 
-            <span className="text-slate-400 font-medium ml-1">vs last month</span>
-          </p>
-        </div>
-
-        {/* Card 4: Attendance Status */}
-        <div className="bg-white/90 backdrop-blur rounded-2xl p-6 border border-white shadow-sm flex flex-col items-center justify-center text-center hover:shadow-md transition-shadow">
-          <p className="text-sm font-bold text-slate-700 mb-6 absolute top-6 left-6">Attendance Status</p>
-          
-          <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-6 mt-8 shadow-inner shadow-emerald-100">
-            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-          </div>
-          
-          <h3 className={`text-xl font-bold mb-2 ${getStatusTextColor(status)}`}>{status} Standing</h3>
-          <p className="text-xs text-slate-500 px-4 leading-relaxed">
-            Keep it up! You are above the required 75%.
-          </p>
-        </div>
-
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Recent Lectures */}
-        <div className="lg:col-span-5 bg-white/90 backdrop-blur rounded-2xl p-4 border border-white shadow-sm mb-4">
-          <h3 className="text-sm font-bold text-slate-700 mb-3">Recent Lectures</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {(recentLectures.length ? recentLectures : []).map((raw) => {
-              const lec = normalizeLecture(raw);
-              return (
-              <div key={lec._id || lec.sessionId} className="p-3 rounded-lg border bg-slate-50 flex items-start justify-between">
-                <div>
-                  <div className="font-semibold text-slate-800">{lec.subject?.name || lec.subject || 'Lecture'}</div>
-                  <div className="text-xs text-slate-500">{lec.classroom?.name || lec.class || ''} • {new Date(lec.startDateTime || Date.now()).toLocaleString()}</div>
-                </div>
-                <div className="text-right">
-                  <span className={`px-2 py-1 rounded-full text-xs font-semibold ${lec.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700'}`}>{(lec.status || '').toUpperCase()}</span>
-                </div>
-              </div>
-              );
-            })}
-          </div>
-        </div>
-        
-        {/* Subject Wise Attendance Table */}
-        <div className="lg:col-span-3 bg-white/90 backdrop-blur rounded-2xl p-6 border border-white shadow-sm">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold text-slate-800">Subject Wise Attendance</h2>
-            <button className="text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">View All</button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="text-slate-500 border-b border-slate-100">
-                <tr>
-                  <th className="pb-4 font-semibold w-1/3">Subject</th>
-                  <th className="pb-4 font-semibold text-center">Classes</th>
-                  <th className="pb-4 font-semibold text-center">Present</th>
-                  <th className="pb-4 font-semibold text-center">Absent</th>
-                  <th className="pb-4 font-semibold text-center">Percentage</th>
-                  <th className="pb-4 font-semibold text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {tableSubjects.map((sub, i) => (
-                  <tr key={i} className="hover:bg-slate-50/50 transition-colors group">
-                    <td className="py-4 font-semibold text-slate-700">{sub.name}</td>
-                    <td className="py-4 text-center text-slate-600">{sub.classes}</td>
-                    <td className="py-4 text-center font-semibold text-emerald-600">{sub.present}</td>
-                    <td className="py-4 text-center font-semibold text-red-500">{sub.absent}</td>
-                    <td className="py-4 text-center font-bold text-slate-800">{sub.percentage.toFixed(1)}%</td>
-                    <td className="py-4 text-center">
-                      <span className={`inline-block px-3 py-1 rounded-full text-[11px] font-bold border ${getStatusColor(sub.status)}`}>
-                        {sub.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          
-          <div className="mt-6 flex justify-center">
-            <button className="text-sm font-semibold text-blue-600 flex items-center gap-1 hover:text-blue-700">
-              View Detailed Report <span className="text-lg">›</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Attendance Percentage Guide */}
-        <div className="lg:col-span-2 bg-white/90 backdrop-blur rounded-2xl p-6 border border-white shadow-sm flex flex-col justify-between">
-          <h2 className="text-lg font-bold text-slate-800 mb-6">Attendance Percentage Guide</h2>
-          
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            
-            {/* Green */}
-            <div className="flex flex-col items-center text-center group">
-              <div className="w-20 h-12 relative overflow-hidden mb-3">
-                <div className="w-20 h-20 border-8 border-emerald-500 rounded-full border-b-transparent border-r-transparent transform -rotate-45 group-hover:scale-105 transition-transform"></div>
-                <div className="absolute bottom-0 w-full text-[10px] font-bold text-slate-600">75% and above</div>
-              </div>
-              <h4 className="text-sm font-bold text-emerald-600 mb-1">Good</h4>
-              <p className="text-[10px] text-slate-500 leading-tight">Excellent<br/>Keep it up!</p>
+            <div className="space-y-3">
+              <h1 className="text-3xl font-semibold tracking-tight text-slate-900 md:text-5xl">
+                Welcome back, {user.name || 'Student'}
+              </h1>
+              <p className="max-w-2xl text-sm leading-6 text-slate-600 md:text-base">
+                Quick overview from live student data.
+              </p>
             </div>
 
-            {/* Yellow */}
-            <div className="flex flex-col items-center text-center group">
-              <div className="w-20 h-12 relative overflow-hidden mb-3">
-                <div className="w-20 h-20 border-8 border-yellow-400 rounded-full border-b-transparent border-r-transparent transform -rotate-45 group-hover:scale-105 transition-transform"></div>
-                <div className="absolute bottom-0 w-full text-[10px] font-bold text-slate-600">60% - 75%</div>
-              </div>
-              <h4 className="text-sm font-bold text-yellow-600 mb-1">Average</h4>
-              <p className="text-[10px] text-slate-500 leading-tight">Need Improvement<br/>Try to be regular</p>
+            <div className="flex flex-wrap gap-3 text-sm">
+              <span className="rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1.5 font-medium text-emerald-700">
+                {band.label}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-700">
+                {attendanceData?.classroom?.name || 'Classroom not assigned'}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-700">
+                {subjectCount} subjects tracked
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-700">
+                {lectureRows.length} lectures today
+              </span>
             </div>
 
-            {/* Red */}
-            <div className="flex flex-col items-center text-center group">
-              <div className="w-20 h-12 relative overflow-hidden mb-3">
-                <div className="w-20 h-20 border-8 border-red-500 rounded-full border-b-transparent border-r-transparent transform -rotate-45 group-hover:scale-105 transition-transform"></div>
-                <div className="absolute bottom-0 w-full text-[10px] font-bold text-slate-600">Below 60%</div>
-              </div>
-              <h4 className="text-sm font-bold text-red-600 mb-1">Low</h4>
-              <p className="text-[10px] text-slate-500 leading-tight">At Risk<br/>Your attendance is low</p>
-            </div>
-            
+            {loading && <p className="text-sm text-slate-500">Loading attendance data...</p>}
+            {!loading && error && <p className="text-sm text-red-600">{error}</p>}
           </div>
 
-          <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 flex items-start gap-3">
-            <svg className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p className="text-xs font-medium text-blue-800 leading-relaxed">
-              Minimum 75% attendance is required to appear for examinations.
-            </p>
-          </div>
-        </div>
-
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Apply for Leave Form */}
-        <div className="bg-white/90 backdrop-blur rounded-2xl p-6 border border-white shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between mb-6 relative z-10">
-            <h2 className="text-lg font-bold text-slate-800">Apply for Leave</h2>
-            <button className="text-sm font-semibold text-blue-600 hover:text-blue-700">View My Leaves</button>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-6 relative z-10">
-            <div className="hidden sm:flex flex-col items-center justify-center bg-blue-50 w-24 rounded-xl border border-blue-100">
-              <svg className="w-10 h-10 text-blue-600 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          <div className="relative mx-auto flex w-full max-w-sm flex-col items-center rounded-[1.75rem] border border-white/80 bg-white/90 p-6 text-center shadow-lg shadow-sky-100/50">
+            <div className="relative mb-4 flex h-36 w-36 items-center justify-center">
+              <svg className="h-full w-full -rotate-90 transform" viewBox="0 0 120 120">
+                <circle cx="60" cy="60" r="48" fill="none" stroke="#e2e8f0" strokeWidth="8" />
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="48"
+                  fill="none"
+                  stroke={overallPercentage >= 75 ? '#10b981' : overallPercentage >= 60 ? '#f59e0b' : '#f43f5e'}
+                  strokeWidth="8"
+                  strokeLinecap="round"
+                  strokeDasharray="301.6"
+                  strokeDashoffset={301.6 - (301.6 * overallPercentage) / 100}
+                  className="transition-all duration-700"
+                />
               </svg>
-              <svg className="w-5 h-5 text-blue-600 absolute bottom-12 right-6 bg-blue-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className="text-4xl font-semibold tracking-tight text-slate-900">{formatPercentage(overallPercentage)}</span>
+                <span className="mt-1 text-xs font-medium uppercase tracking-[0.2em] text-slate-500">overall</span>
+              </div>
             </div>
-            
-            <form className="flex-1 space-y-4" onSubmit={handleLeaveSubmit}>
-              {leaveMessage && (
-                <div className="text-sm px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-700">
-                  {leaveMessage}
-                </div>
-              )}
-              {attachmentMessage && (
-                <div className="text-sm px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-700">
-                  {attachmentMessage}
-                </div>
-              )}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Leave Type</label>
-                  <select value={leaveForm.leaveType} onChange={(e) => setLeaveForm((prev) => ({ ...prev, leaveType: e.target.value }))} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-700 appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20width%3D%2220%22%20height%3D%2220%22%20fill%3D%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M5%208l5%205%205-5%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[position:right_0.5rem_center]">
-                    <option>Select Leave Type</option>
-                    <option>Sick Leave</option>
-                    <option>Medical Leave</option>
-                    <option>Personal Leave</option>
-                    <option>Emergency Leave</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">From Date</label>
-                  <input value={leaveForm.fromDate} onChange={(e) => setLeaveForm((prev) => ({ ...prev, fromDate: e.target.value }))} type="date" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-700" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">To Date</label>
-                  <input value={leaveForm.toDate} onChange={(e) => setLeaveForm((prev) => ({ ...prev, toDate: e.target.value }))} type="date" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-700" />
-                </div>
-              </div>
+            <div className="space-y-1">
+              <p className="text-lg font-semibold text-slate-900">{presentClasses}/{totalClasses}</p>
+              <p className="text-sm text-slate-500">{absentClasses} absent</p>
+            </div>
+          </div>
+        </div>
+      </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Reason</label>
-                <textarea value={leaveForm.reason} onChange={(e) => setLeaveForm((prev) => ({ ...prev, reason: e.target.value }))} rows="2" placeholder="Enter reason for leave..." className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-700 resize-none"></textarea>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Attachment</label>
-                <input type="file" accept="image/*,.pdf" onChange={handleAttachmentChange} className="w-full text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100" />
-                <p className="mt-1 text-[11px] text-slate-500">Upload a medical certificate, hackathon proof, or other document. JPG, PNG, WEBP, and PDF are allowed.</p>
-                {attachmentState.uploading && <p className="mt-1 text-xs text-blue-600">Uploading attachment...</p>}
-                {!attachmentState.uploading && attachmentState.url && <p className="mt-1 text-xs text-emerald-600">Uploaded: {attachmentState.fileName}</p>}
-              </div>
-              
-              <div className="flex justify-end pt-2">
-                <button type="submit" disabled={leaveLoading} className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600 text-white font-semibold text-sm rounded-lg shadow-lg shadow-blue-500/30 transition-all active:scale-95 disabled:opacity-70">
-                  {leaveLoading ? 'Submitting...' : 'Submit Leave Request'}
-                </button>
-              </div>
-            </form>
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-sm backdrop-blur-xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Overall</p>
+          <div className="mt-3 flex items-end justify-between gap-4">
+            <div>
+              <div className="text-3xl font-semibold text-slate-900">{formatPercentage(overallPercentage)}</div>
+            </div>
+            <div className={`rounded-2xl px-3 py-2 text-xs font-semibold ${overallPercentage >= 75 ? 'bg-emerald-50 text-emerald-700' : overallPercentage >= 60 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'}`}>
+              {band.label}
+            </div>
           </div>
         </div>
 
-        {/* Recent Leave Status */}
-        <div className="bg-white/90 backdrop-blur rounded-2xl p-6 border border-white shadow-sm flex flex-col">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold text-slate-800">Recent Leave Status</h2>
-            <button className="text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">View All</button>
+        <div className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-sm backdrop-blur-xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Classes</p>
+          <div className="mt-3 flex items-end justify-between gap-4">
+            <div>
+              <div className="text-3xl font-semibold text-slate-900">{totalClasses}</div>
+            </div>
+            <div className="text-right text-sm text-slate-500">
+              <div><span className="font-semibold text-emerald-600">{presentClasses}</span> P</div>
+              <div><span className="font-semibold text-rose-600">{absentClasses}</span> A</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-white/70 bg-white/85 p-5 shadow-sm backdrop-blur-xl">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Today</p>
+          <div className="mt-3 flex items-end justify-between gap-4">
+            <div>
+              <div className="text-3xl font-semibold text-slate-900">{lectureRows.length}</div>
+            </div>
+            <div className="text-right text-sm text-slate-500">
+              <div className="font-medium text-slate-800">Next</div>
+              <div>{nextLecture ? formatTime(nextLecture.startDateTime) : '--'}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <section className="rounded-3xl border border-white/70 bg-white/85 p-6 shadow-sm backdrop-blur-xl">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Subjects</p>
+              <h2 className="mt-2 text-xl font-semibold text-slate-900">Quick view</h2>
+            </div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+              {subjectCount || 0}
+            </div>
           </div>
 
-          <div className="flex-1 space-y-4">
-            {(leaveHistory.length ? leaveHistory : recentLeaves).map((leave, i) => (
-              <div key={i} className="flex items-start gap-4 pb-4 border-b border-slate-100 last:border-0 last:pb-0 hover:bg-slate-50/50 p-2 -mx-2 rounded-xl transition-colors">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm ${leave.color || 'bg-slate-100 text-slate-700'} shadow-sm`}>
-                  {leave.initials || String(leave.student?.name || leave.name || 'A').slice(0, 2).toUpperCase()}
-                </div>
-                <div className="flex-1">
-                  <h4 className="text-sm font-bold text-slate-800">{leave.student?.name || leave.name}</h4>
-                  <p className="text-xs font-medium text-slate-500 mt-0.5">{leave.reason || leave.type}</p>
-                </div>
-                <div className="text-right flex flex-col items-end gap-1.5">
-                  <div>
-                    <p className="text-xs font-bold text-slate-700">{leave.createdAt ? new Date(leave.createdAt).toLocaleDateString() : leave.date}</p>
-                    <p className="text-[10px] text-slate-400">{leave.leaveType || leave.duration || leave.status}</p>
+          {subjectRows.length ? (
+            <div className="mt-6 space-y-4">
+              {subjectRows.slice(0, 4).map((subject) => (
+                <div key={subject.name} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-base font-semibold text-slate-900">{getSubjectName(subject.name)}</div>
+                      <div className="mt-1 text-sm text-slate-500">{subject.present}/{subject.total}</div>
+                    </div>
+                    <div className={`rounded-full px-3 py-1 text-xs font-semibold ${subject.percentage >= 75 ? 'bg-emerald-50 text-emerald-700' : subject.percentage >= 60 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'}`}>
+                      {formatPercentage(subject.percentage)}
+                    </div>
                   </div>
-                  <span className={`inline-block px-3 py-0.5 rounded-full text-[10px] font-bold border ${
-                    String(leave.status).toLowerCase() === 'approved' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' :
-                    String(leave.status).toLowerCase() === 'pending' ? 'bg-orange-50 text-orange-600 border-orange-200' :
-                    'bg-red-50 text-red-600 border-red-200'
-                  }`}>
-                    {leave.status}
-                  </span>
+                  <div className="mt-3 h-2 rounded-full bg-slate-200/80">
+                    <div
+                      className={`h-2 rounded-full ${subject.percentage >= 75 ? 'bg-emerald-500' : subject.percentage >= 60 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                      style={{ width: `${Math.max(4, Math.min(subject.percentage, 100))}%` }}
+                    />
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                    <span>{subject.status}</span>
+                    <span>{subject.absent}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+
+              {attentionSubjects.length > 0 && (
+                <div className="rounded-2xl border border-amber-100 bg-amber-50/70 p-4 text-sm text-amber-900">
+                  <span className="font-semibold">Watch:</span> {attentionSubjects.map((subject) => getSubjectName(subject.name)).join(', ')}
+                </div>
+              )}
+
+              {strongestSubject && weakestSubject && (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">Top</p>
+                    <div className="mt-2 text-lg font-semibold text-slate-900">{getSubjectName(strongestSubject.name)}</div>
+                    <div className="mt-1 text-sm text-slate-600">{formatPercentage(strongestSubject.percentage)}</div>
+                  </div>
+                  <div className="rounded-2xl border border-rose-100 bg-rose-50/70 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-rose-700">Low</p>
+                    <div className="mt-2 text-lg font-semibold text-slate-900">{getSubjectName(weakestSubject.name)}</div>
+                    <div className="mt-1 text-sm text-slate-600">{formatPercentage(weakestSubject.percentage)}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-6 text-sm text-slate-500">
+              No subject data yet.
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-3xl border border-white/70 bg-white/85 p-6 shadow-sm backdrop-blur-xl">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">Today</p>
+              <h2 className="mt-2 text-xl font-semibold text-slate-900">Lectures</h2>
+            </div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+              Live
+            </div>
           </div>
-        </div>
 
+          {lectureError && <p className="mt-4 text-sm text-red-600">{lectureError}</p>}
+
+          {lectureRows.length ? (
+            <div className="mt-6 space-y-3">
+              {lectureRows.slice(0, 4).map((lecture) => (
+                <div key={lecture.id || `${lecture.subject}-${lecture.startDateTime}`} className="rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-base font-semibold text-slate-900">{getSubjectName(lecture.subject)}</div>
+                      <div className="mt-1 text-sm text-slate-500">
+                        {getClassroomName(lecture.classroom)} {lecture.startDateTime ? `• ${formatDateTime(lecture.startDateTime)}` : ''}
+                      </div>
+                    </div>
+                    <div className={`rounded-full px-3 py-1 text-xs font-semibold ${lecture.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : lecture.status === 'ongoing' ? 'bg-sky-50 text-sky-700' : 'bg-slate-200 text-slate-700'}`}>
+                      {String(lecture.status || 'scheduled').toUpperCase()}
+                    </div>
+                  </div>
+                  {lecture.endDateTime && (
+                    <div className="mt-2 text-xs text-slate-500">
+                      Ends at {formatTime(lecture.endDateTime)}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-6 text-sm text-slate-500">
+              No lectures.
+            </div>
+          )}
+        </section>
       </div>
-
-      {/* Footer */}
-      <footer className="pt-8 pb-4 flex flex-col md:flex-row items-center justify-between text-xs text-slate-500 border-t border-slate-200/60 mt-8">
-        <p>© 2025 DIEMS. All rights reserved.</p>
-        <div className="flex items-center gap-1.5 mt-2 md:mt-0">
-          <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-          </svg>
-          Professional ERP Access Portal
-        </div>
-      </footer>
-
     </div>
   );
 }

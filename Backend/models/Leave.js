@@ -11,7 +11,7 @@ const LeaveSchema = new mongoose.Schema({
   attachmentSize: { type: Number },
   fromDate: { type: Date, required: true },
   toDate: { type: Date, required: true },
-  duration: { type: String, enum: ['Full Day', '1st Half', '2nd Half'], default: 'Full Day' },
+  duration: [{ type: String, trim: true }],
   reason: { type: String, trim: true },
   status: { type: String, enum: ['Pending', 'Approved', 'Rejected'], default: 'Pending' },
   reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

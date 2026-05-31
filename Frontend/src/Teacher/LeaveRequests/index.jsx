@@ -7,7 +7,25 @@ const formatDate = (value) => {
   return new Date(value).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-export default function LeaveRequests({ onChanged, loading: parentLoading = false, theme = 'light' }) {
+const durationLabels = {
+  'Full Day': 'Full Day',
+  '10:15': '10:15 AM - 11:15 AM',
+  '11:15': '11:15 AM - 12:15 PM',
+  '13:15': '1:15 PM - 2:15 PM',
+  '14:15': '2:15 PM - 3:15 PM',
+  '15:30': '3:30 PM - 4:30 PM',
+  '16:30': '4:30 PM - 5:30 PM'
+};
+
+const formatDuration = (value) => {
+  if (Array.isArray(value)) {
+    if (value.includes('Full Day')) return 'Full Day';
+    return value.map((slot) => durationLabels[slot] || slot).join(', ');
+  }
+  return durationLabels[value] || value || 'Full Day';
+};
+
+export default function LeaveRequests({ onChanged, loading: parentLoading = false, theme = 'light', refreshToken = 0 }) {
   const [leaveRequests, setLeaveRequests] = useState([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -28,7 +46,7 @@ export default function LeaveRequests({ onChanged, loading: parentLoading = fals
 
   useEffect(() => {
     loadLeaveRequests();
-  }, []);
+  }, [refreshToken]);
 
   const counts = useMemo(() => {
     const pending = leaveRequests.filter((leave) => leave.status === 'Pending').length;
@@ -108,7 +126,7 @@ export default function LeaveRequests({ onChanged, loading: parentLoading = fals
                     </span>
                   </div>
                   <p className="text-sm text-slate-600">{leave.classroom?.name || 'Classroom'} {leave.classroom?.year ? `(${leave.classroom.year})` : ''}</p>
-                  <p className="text-sm text-slate-600">{formatDate(leave.fromDate)} to {formatDate(leave.toDate)} • {leave.duration || 'Full Day'} • {leave.leaveType || 'Leave'}</p>
+                  <p className="text-sm text-slate-600">{formatDate(leave.fromDate)} to {formatDate(leave.toDate)} • {formatDuration(leave.duration)} • {leave.leaveType || 'Leave'}</p>
                   {leave.reason && <p className="text-sm text-slate-500">Reason: {leave.reason}</p>}
                   <p className="text-xs text-slate-400">Requested on {formatDate(leave.createdAt)}</p>
                 </div>

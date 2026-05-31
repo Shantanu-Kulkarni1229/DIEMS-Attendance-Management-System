@@ -1,24 +1,38 @@
 const { MANUAL_SLOTS } = require('./attendanceUtils');
 
 const normalizeLeaveDuration = (value) => {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'full day') return 'Full Day';
-  if (normalized === '1st half' || normalized === 'first half' || normalized === 'morning half') return '1st Half';
-  if (normalized === '2nd half' || normalized === 'second half' || normalized === 'afternoon half') return '2nd Half';
-  return 'Full Day';
+  if (Array.isArray(value)) {
+    const normalizedSlots = value.flatMap((entry) => normalizeLeaveDuration(entry));
+    if (!normalizedSlots.length) return [];
+    if (normalizedSlots.includes('Full Day')) return ['Full Day'];
+    return [...new Set(normalizedSlots)];
+  }
+
+  const normalized = String(value || '').trim();
+  if (!normalized) return [];
+
+  const lowered = normalized.toLowerCase();
+  if (lowered === 'full day') return ['Full Day'];
+
+  const lectureSlots = MANUAL_SLOTS.Lecture || [];
+  const matchingSlot = lectureSlots.find((slot) => {
+    const label = String(slot.label || '').toLowerCase();
+    return slot.startTime === normalized || label === lowered || `${slot.startTime} - ${slot.endTime}`.toLowerCase() === lowered;
+  });
+
+  return matchingSlot ? [matchingSlot.startTime] : [];
 };
 
 const getCoveredSlotKeys = (sessionType, duration) => {
   const normalizedDuration = normalizeLeaveDuration(duration);
   const slots = MANUAL_SLOTS[sessionType] || [];
-  if (normalizedDuration === 'Full Day') {
+  if (Array.isArray(normalizedDuration) && normalizedDuration.includes('Full Day')) {
     return new Set(slots.map((slot) => `${slot.startTime}-${slot.endTime}`));
   }
 
-  const midpoint = Math.ceil(slots.length / 2);
-  const coveredSlots = normalizedDuration === '1st Half'
-    ? slots.slice(0, midpoint)
-    : slots.slice(midpoint);
+  if (!Array.isArray(normalizedDuration) || !normalizedDuration.length) return new Set();
+
+  const coveredSlots = slots.filter((slot) => normalizedDuration.includes(slot.startTime));
 
   return new Set(coveredSlots.map((slot) => `${slot.startTime}-${slot.endTime}`));
 };

@@ -1,9 +1,10 @@
-import React from 'react';
 import { logout } from '../../services/session';
 
 export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setSidebarOpen }) {
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /> }
+    { id: 'dashboard', label: 'Dashboard', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /> },
+    { id: 'lecture-wise-attendance', label: 'Lecture Wise Attendance', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2m-2 0V3m-4 2V3m2 4v8m-4-4h8" /> },
+    { id: 'leave-request', label: 'Leave Request', icon: <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14-4H5m14 8H5m14 4H5M7 3h10a2 2 0 012 2v14a2 2 0 01-2 2H7a2 2 0 01-2-2V5a2 2 0 012-2z" /> }
   ];
 
   return (
@@ -20,14 +21,12 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
       <div className={`fixed lg:sticky top-0 left-0 h-screen w-72 bg-white/70 backdrop-blur-xl border-r border-white/60 shadow-[4px_0_24px_rgba(0,0,0,0.02)] z-30 transition-transform duration-300 flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         
         {/* Brand */}
-        <div className="p-6 flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-sky-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 text-white">
-            <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-            </svg>
+        <div className="flex items-center gap-3 p-6">
+          <div className="w-12 h-12 rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden flex items-center justify-center">
+            <img src="/image.png" alt="DIEMS logo" className="w-full h-full object-contain p-1" />
           </div>
           <div>
-            <h2 className="text-xl font-bold tracking-tight text-slate-800 leading-tight">DIEMS</h2>
+            <h2 className="text-lg font-bold tracking-tight text-slate-800 leading-tight">DIEMS</h2>
             <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Attendance System</p>
           </div>
           <button 
@@ -41,7 +40,7 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
         </div>
 
         {/* Navigation */}
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1">
+        <div className="flex-1 px-4 py-4 space-y-1">
           {navItems.map((item) => {
             const isActive = currentPage === item.id;
             return (
@@ -71,36 +70,17 @@ export default function Sidebar({ currentPage, setCurrentPage, sidebarOpen, setS
           })}
         </div>
 
-        {/* Promo Card */}
-        <div className="px-4 pb-4">
-          <div className="p-5 bg-gradient-to-br from-sky-50 to-blue-50/50 rounded-2xl border border-sky-100 shadow-sm relative overflow-hidden group">
-            <div className="absolute top-[-20%] right-[-10%] w-24 h-24 bg-blue-200 rounded-full opacity-30 blur-2xl group-hover:bg-blue-300 transition-colors"></div>
-            <div className="absolute bottom-[-10%] left-[-10%] w-20 h-20 bg-sky-200 rounded-full opacity-30 blur-2xl group-hover:bg-sky-300 transition-colors"></div>
-            
-            <h3 className="text-sm font-bold text-slate-800 mb-1.5 relative z-10 leading-tight">Stay Consistent,<br/>Stay Ahead!</h3>
-            <p className="text-[11px] text-slate-600 leading-relaxed relative z-10 mb-4">Good attendance today builds your success tomorrow.</p>
-            
-            <div className="flex justify-center relative z-10">
-              <div className="w-full h-24 bg-white/80 backdrop-blur-sm rounded-xl shadow-sm border border-white/60 flex items-center justify-center relative overflow-hidden group-hover:shadow-md transition-all">
-                <div className="absolute inset-0 bg-gradient-to-t from-sky-50/50 to-transparent"></div>
-                <div className="relative text-3xl flex items-center justify-center space-x-2">
-                  <span className="transform -rotate-6 hover:rotate-0 transition-transform">📊</span>
-                  <span className="transform rotate-12 hover:rotate-0 transition-transform">🎓</span>
-                  <span className="absolute bottom-1 right-2 text-xl">🪴</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Logout */}
-        <div className="p-4 border-t border-slate-200/60">
-          <button type="button" onClick={logout} className="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors font-medium">
+        <div className="p-4 border-t border-slate-200/60 space-y-3">
+          <button type="button" onClick={logout} className="flex w-full items-center gap-3 rounded-xl px-4 py-3 font-medium text-slate-600 transition-colors hover:bg-red-50 hover:text-red-600">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
             </svg>
             Logout
           </button>
+          <p className="px-2 text-center text-[11px] font-medium text-slate-500">
+            Made with ❤️ by Team Pravartak
+          </p>
         </div>
       </div>
     </>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { get, patch, post } from '../../services/apiClient';
+import { ButtonSpinner } from './Skeletons';
 
 const MANUAL_SLOTS = {
   Lecture: [
@@ -63,7 +64,19 @@ const buildPracticalBatches = (students = [], classroomName = '') => {
   return batches.filter(Boolean);
 };
 
-export default function MarkAttendanceModal({ onClose, initialData, onSaved, dashboardData }) {
+const normalizeRollKey = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+const normalizeRollDigits = (value) => {
+  const digits = String(value || '').replace(/\D/g, '');
+  return digits.replace(/^0+/, '') || digits;
+};
+
+const findSlotByTimes = (sessionType, startTime, endTime) => {
+  const slots = MANUAL_SLOTS[sessionType] || MANUAL_SLOTS.Lecture;
+  return slots.find((slot) => slot.startTime === startTime && slot.endTime === endTime) || slots[0];
+};
+
+export default function MarkAttendanceModal({ onClose, initialData, onSaved, dashboardData, theme = 'light' }) {
   const [classrooms, setClassrooms] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [students, setStudents] = useState([]);
@@ -73,11 +86,9 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
   const [selectedClassroomId, setSelectedClassroomId] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
   const [sessionType, setSessionType] = useState('Lecture');
-  const [selectedSlot, setSelectedSlot] = useState(MANUAL_SLOTS.Lecture[0]);
+  const [selectedSlot, setSelectedSlot] = useState(() => findSlotByTimes('Lecture', initialData?.startTime, initialData?.endTime));
   const [selectedBatchIds, setSelectedBatchIds] = useState([]);
   const [date, setDate] = useState(toInputDate());
-  const [startTime, setStartTime] = useState(initialData?.startTime || '09:00');
-  const [endTime, setEndTime] = useState(initialData?.endTime || '11:15');
   const [message, setMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -89,7 +100,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
 
   const dashboardAssignedSubjects = useMemo(() => (Array.isArray(dashboardData?.assignedSubjects) ? dashboardData.assignedSubjects : []), [dashboardData]);
   const dashboardStudentsByClassroom = useMemo(() => dashboardData?.studentsByClassroom || {}, [dashboardData]);
-  const initialSessionId = initialData?.sessionId || null;
+  const sessionLocked = Boolean(initialData?.sessionId);
 
   const normalizeClassroom = (item) => {
     if (!item) return null;
@@ -181,6 +192,13 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
   }, [sessionType, selectedSlot.startTime, selectedSlot.endTime]);
 
   useEffect(() => {
+    if (initialData?.startTime && initialData?.endTime) {
+      const slot = findSlotByTimes(sessionType, initialData.startTime, initialData.endTime);
+      setSelectedSlot(slot);
+    }
+  }, [initialData?.startTime, initialData?.endTime, sessionType]);
+
+  useEffect(() => {
     const loadStudents = async () => {
       if (!selectedClassroomId) {
         setStudents([]);
@@ -226,6 +244,35 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
     [subjects, selectedSubjectId]
   );
 
+  const practicalBatches = useMemo(
+    () => (sessionType === 'Practical' ? buildPracticalBatches(students, selectedClassroom?.name || '') : []),
+    [sessionType, students, selectedClassroom?.name]
+  );
+
+  const selectedPracticalStudents = useMemo(() => {
+    if (sessionType !== 'Practical') return students;
+    if (!selectedBatchIds.length) return [];
+    return practicalBatches
+      .filter((batch) => selectedBatchIds.includes(batch.id))
+      .flatMap((batch) => batch.students);
+  }, [practicalBatches, selectedBatchIds, sessionType, students]);
+
+  const toggleBatchSelection = (batchId) => {
+    setSelectedBatchIds((prev) => (
+      prev.includes(batchId)
+        ? prev.filter((id) => id !== batchId)
+        : [...prev, batchId]
+    ));
+  };
+
+  const selectAllBatches = () => {
+    setSelectedBatchIds(practicalBatches.map((batch) => batch.id));
+  };
+
+  const clearBatchSelection = () => {
+    setSelectedBatchIds([]);
+  };
+
   const toggleAttendance = (studentId) => {
     setStudents((prev) => prev.map((s) => (s.id === studentId ? { ...s, present: !s.present } : s)));
     setHighlightedRows((prev) => prev.filter((id) => id !== studentId));
@@ -235,49 +282,50 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
     const raw = String(absentInput || '').trim();
     if (!raw) return;
 
-    // split on commas, semicolons, newlines or whitespace
-    const tokens = raw.split(/[,;\n\s]+/).map((t) => t.trim()).filter(Boolean);
+    const hasDelimitedList = /[;,\n]/.test(raw);
+    const tokens = hasDelimitedList
+      ? raw.split(/[;,\n]+/).map((token) => token.trim()).filter(Boolean)
+      : raw.split(/\s+/).map((token) => token.trim()).filter(Boolean);
+
     if (!tokens.length) return;
+
+    const normalizedTokens = tokens.map((token) => {
+      const rawToken = token.replace(/^,+|,+$/g, '');
+      return {
+        raw: rawToken,
+        key: normalizeRollKey(rawToken),
+        digits: String(rawToken || '').replace(/\D/g, '')
+      };
+    });
 
     const toHighlight = [];
 
     setStudents((prev) => prev.map((s) => {
       const rollRaw = String(s.roll || '');
-      const rollLower = rollRaw.toLowerCase();
-      const rollDigits = rollRaw.replace(/\D/g, '');
-      const rollDigitsNoZeros = rollDigits.replace(/^0+/, '') || rollDigits;
+      const rollKey = normalizeRollKey(rollRaw);
+      const rollDigits = String(rollRaw || '').replace(/\D/g, '');
 
       let matched = false;
-      for (const token of tokens) {
-        // handle ranges like 1-5
-        if (/^\d+-\d+$/.test(token)) {
-          const [lo, hi] = token.split('-').map((n) => Number(n.replace(/\D/g, '')));
-          const studentNum = Number(rollDigitsNoZeros);
-          if (!Number.isNaN(studentNum) && studentNum >= lo && studentNum <= hi) {
-            matched = true;
-            break;
+      for (const token of normalizedTokens) {
+        if (token.digits) {
+          if (token.digits.length === 1) {
+            if (rollDigits === token.digits) { matched = true; break; }
+            continue;
           }
+
+          if (token.digits.length === 2) {
+            const rollSuffix = rollDigits.slice(-2);
+            if (rollSuffix === token.digits) { matched = true; break; }
+            continue;
+          }
+
+          // For 3+ digits, match exact suffix only on the digit string
+          if (rollDigits.endsWith(token.digits)) { matched = true; break; }
+          continue;
         }
 
-        const tLower = token.toLowerCase();
-        const tDigits = token.replace(/\D/g, '');
-        const tDigitsNoZeros = tDigits.replace(/^0+/, '') || tDigits;
-
-        // exact alphanumeric match (full roll string)
-        if (tLower && tLower === rollLower) { matched = true; break; }
-
-        if (tDigits) {
-          // For short numeric tokens (1-2 digits) only match exact numeric roll (ignoring leading zeros)
-          if (tDigits.length <= 2) {
-            if (rollDigitsNoZeros === tDigitsNoZeros) { matched = true; break; }
-          } else {
-            // For longer numeric tokens allow exact or trailing match
-            if (rollDigits === tDigits || rollDigits.endsWith(tDigits) || rollDigitsNoZeros === tDigitsNoZeros) { matched = true; break; }
-          }
-        }
-
-        // trailing alphanumeric token match only for longer tokens (reduce accidental short matches)
-        if (tLower && tLower.length >= 3 && rollLower.endsWith(tLower)) { matched = true; break; }
+        // fallback: allow suffix matching on the alphanumeric code too
+        if (token.key && token.key.length >= 2 && rollKey.endsWith(token.key)) { matched = true; break; }
       }
 
       if (matched) {
@@ -294,6 +342,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
   const resetAll = () => {
     setStudents((prev) => prev.map((s) => ({ ...s, present: true })));
     setHighlightedRows([]);
+    setSelectedBatchIds([]);
   };
 
   const saveAttendance = async () => {
@@ -306,13 +355,18 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
       return;
     }
 
-    if (sessionType === 'Practical' && !selectedPracticalStudents.length) {
+    const fallbackPracticalBatchIds = practicalBatches.map((batch) => batch.id);
+    const effectiveBatchIds = sessionType === 'Practical'
+      ? (selectedBatchIds.length ? selectedBatchIds : fallbackPracticalBatchIds)
+      : [];
+    const effectiveStudents = sessionType === 'Practical' ? visibleStudents : students;
+
+    if (sessionType === 'Practical' && !effectiveBatchIds.length) {
       setMessage({ type: 'error', text: 'Please select at least one practical batch.' });
       return;
     }
 
-    const attendanceStudents = sessionType === 'Practical' ? selectedPracticalStudents : students;
-    const records = attendanceStudents.map((s) => ({
+    const records = effectiveStudents.map((s) => ({
       student: s.id,
       status: s.present ? 'present' : 'absent'
     }));
@@ -327,7 +381,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
         sessionType,
         startTime: selectedSlot.startTime,
         endTime: selectedSlot.endTime,
-        practicalBatchIds: sessionType === 'Practical' ? selectedBatchIds : [],
+        practicalBatchIds: effectiveBatchIds,
         records
       });
       setMessage({ type: 'success', text: 'Attendance saved successfully.' });
@@ -376,9 +430,10 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
     }
   };
 
-  const presentCount = selectedPracticalStudents.filter((s) => s.present).length;
-  const absentCount = selectedPracticalStudents.length - presentCount;
   const displayedStudents = sessionType === 'Practical' ? selectedPracticalStudents : students;
+  const visibleStudents = sessionType === 'Practical' && !selectedBatchIds.length ? students : displayedStudents;
+  const presentCount = visibleStudents.filter((s) => s.present).length;
+  const absentCount = visibleStudents.length - presentCount;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-sm">
@@ -404,48 +459,19 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
         <div className={`${theme === 'dark' ? 'px-4 sm:px-6 py-4 bg-slate-800/40 border-b border-slate-700 text-slate-100' : 'px-4 sm:px-6 py-4 bg-sky-50/50 border-b border-sky-100 text-slate-800'} grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm`}>
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Date</p>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} disabled={!!selectedSessionId} className="w-full px-3 py-2 border border-slate-200 rounded-lg" />
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <div>
-                <p className="text-[10px] text-slate-500 mb-1">Start Time</p>
-                <select value={startTime} onChange={(e) => {
-                  const v = e.target.value;
-                  setStartTime(v);
-                }} disabled={!!selectedSessionId} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
-                  <option value="">Select time</option>
-                  <option value="10:15">10.15</option>
-                  <option value="11:15">11.15</option>
-                  <option value="13:15">1.15</option>
-                  <option value="14:15">2.15</option>
-                  <option value="15:30">3.30</option>
-                  <option value="16:30">4.30</option>
-                </select>
-              </div>
-              <div>
-                <p className="text-[10px] text-slate-500 mb-1">End Time</p>
-                <select value={endTime} onChange={(e) => setEndTime(e.target.value)} disabled={!!selectedSessionId} className={`${theme === 'dark' ? 'w-full px-3 py-2 border border-slate-700 rounded-lg text-sm bg-slate-800 text-slate-100 mt-2' : 'w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white mt-2'}`}>
-                  <option value="">Select end time</option>
-                  <option value="11:15">11.15</option>
-                  <option value="12:15">12.15</option>
-                  <option value="14:15">2.15</option>
-                  <option value="15:15">3.15</option>
-                  <option value="16:30">4.30</option>
-                  <option value="17:30">5.30</option>
-                </select>
-              </div>
-            </div>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} disabled={sessionLocked} className="w-full px-3 py-2 border border-slate-200 rounded-lg" />
           </div>
 
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Class</p>
-            <select value={selectedClassroomId} onChange={(e) => setSelectedClassroomId(e.target.value)} disabled={!!selectedSessionId} className="w-full px-3 py-2 border border-slate-200 rounded-lg">
+            <select value={selectedClassroomId} onChange={(e) => setSelectedClassroomId(e.target.value)} disabled={sessionLocked} className="w-full px-3 py-2 border border-slate-200 rounded-lg">
               {classrooms.map((c) => (<option key={c._id} value={c._id}>{c.name}{c.year ? ` (${c.year})` : ''}</option>))}
             </select>
           </div>
 
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Subject</p>
-            <select value={selectedSubjectId} onChange={(e) => setSelectedSubjectId(e.target.value)} disabled={!!selectedSessionId} className="w-full px-3 py-2 border border-slate-200 rounded-lg">
+            <select value={selectedSubjectId} onChange={(e) => setSelectedSubjectId(e.target.value)} disabled={sessionLocked} className="w-full px-3 py-2 border border-slate-200 rounded-lg">
               {subjects.map((s) => (<option key={s._id} value={s._id}>{s.name}{s.code ? ` (${s.code})` : ''}</option>))}
             </select>
           </div>
@@ -469,6 +495,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
               }}
               className="w-full px-3 py-2 border border-slate-200 rounded-lg bg-white"
             >
+              <option value="" disabled>Select a time slot</option>
               {(MANUAL_SLOTS[sessionType] || []).map((slot) => (
                 <option key={`${slot.startTime}-${slot.endTime}`} value={`${slot.startTime}-${slot.endTime}`}>
                   {slot.label}
@@ -555,7 +582,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
                     <tr><th className="px-6 py-3 w-24">Roll No</th><th className="px-6 py-3">Student Name</th><th className="px-6 py-3 w-32 text-center">Present</th></tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {students.map((student) => (
+                    {visibleStudents.map((student) => (
                       <tr
                         key={student.id}
                         className={`hover:bg-slate-50 transition-colors cursor-pointer ${!student.present ? 'bg-red-50/30' : ''} ${highlightedRows.includes(student.id) ? 'bg-red-100/50 animate-pulse-once' : ''}`}
@@ -566,7 +593,7 @@ export default function MarkAttendanceModal({ onClose, initialData, onSaved, das
                         <td className="px-6 py-3 text-center"><div className={`w-6 h-6 rounded border flex items-center justify-center ${student.present ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-300'}`}>{student.present && (<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>)}</div></td>
                       </tr>
                     ))}
-                    {students.length === 0 && (
+                    {visibleStudents.length === 0 && (
                       <tr>
                         <td colSpan={3} className="px-6 py-6 text-center text-slate-500">No students found for selected classroom.</td>
                       </tr>

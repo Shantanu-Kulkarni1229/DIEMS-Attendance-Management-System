@@ -72,7 +72,7 @@ export const remove = (path) => request(path, { method: 'DELETE' });
 export const getTeacherToday = () => get('/api/timetable/teacher/today');
 export const getAdminTimetable = (opts = {}) => {
   const qs = opts.date ? `?date=${encodeURIComponent(opts.date)}` : '';
-  return get(`/api/timetable/admin${qs}`);
+  return get(`/api/timetable/admin/sessions${qs}`);
 };
-export const substituteLecture = (sessionId, body) => patch(`/api/timetable/sessions/${sessionId}/substitute`, body);
+export const substituteLecture = (sessionId, body) => post(`/api/timetable/admin/sessions/${sessionId}/substitute`, body);
 export const getStudentTodayLectures = () => get('/api/timetable/student/my-lectures');
