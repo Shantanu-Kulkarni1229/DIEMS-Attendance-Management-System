@@ -2,6 +2,16 @@
 
 Production-style Node.js + Express backend for the College Attendance Management System.
 
+## Current Working Model
+
+The backend currently supports a manual attendance workflow rather than requiring a timetable selection in the teacher UI.
+
+- Teachers choose `Date`, `Classroom`, `Subject`, `Session Type`, and `Time Slot`
+- Lecture attendance uses fixed 1-hour slots
+- Practical/Lab attendance uses fixed 2-hour slots
+- Attendance records store `sessionType`, `startTime`, and `endTime`
+- Leave requests store the leave category separately from the enum-safe `duration` field
+
 ## Overview
 
 This backend provides role-based attendance management for:
@@ -15,7 +25,7 @@ Core capabilities:
 
 - JWT authentication
 - Role-based access control
-- Teacher attendance marking and updates
+- Manual slot-based teacher attendance marking and updates
 - Student attendance viewing with subject-wise and overall percentage
 - Daily attendance alert emails when attendance falls below 75%
 - Timetable entry and lecture-session APIs (including substitution flow)
@@ -222,6 +232,9 @@ Request:
 	"date": "2026-05-06",
 	"classroom": "classroom_id_here",
 	"subject": "subject_id_here",
+	"sessionType": "Lecture",
+	"startTime": "10:15",
+	"endTime": "11:15",
 	"records": [
 		{
 			"student": "student_id_here",
@@ -256,8 +269,20 @@ Request:
 
 Protected: `Teacher`
 
-This endpoint returns the teacher profile, recent attendance records, and assigned subjects.
-The assigned subjects list is derived only from `subject.assignedTeacher`, which is the single source of truth.
+This endpoint returns the teacher profile, recent attendance records, assigned classrooms, and assigned subjects.
+The assigned subjects list is derived from teacher assignment first and may fall back to timetable planning where available.
+
+#### GET `/api/teacher/attendance-records`
+
+Protected: `Teacher`, `Admin`, `SuperAdmin`
+
+Supports filtering by `classroom`, `subject`, `date`, `sessionType`, `startTime`, and `endTime`.
+
+#### GET `/api/teacher/attendance-context`
+
+Protected: `Teacher`
+
+Returns the current classroom and subject assignments plus cached students by classroom for the teacher UI.
 
 Response:
 

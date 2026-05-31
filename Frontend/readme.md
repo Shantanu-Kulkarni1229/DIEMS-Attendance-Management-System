@@ -1,16 +1,76 @@
-# React + Vite
+# DIEMS Attendance Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite frontend for the DIEMS Attendance Management System.
 
-Currently, two official plugins are available:
+## Current Working State
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+The frontend currently supports:
 
-## React Compiler
+- Role-based login and routing for Student, Teacher, Admin, and Super Admin
+- Teacher dashboard with assigned classrooms, assigned subjects, and attendance history
+- Manual attendance marking with selectable session type and time slot
+- Student attendance dashboard and leave request form
+- Teacher leave review actions
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Teacher Attendance Flow
 
-## Expanding the ESLint configuration
+Teachers now mark attendance without choosing a timetable lecture number.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+The modal requires:
+
+- Date
+- Class / Section
+- Subject
+- Session Type
+- Time Slot
+
+Available slots are fixed in the UI:
+
+- Lecture: 10:15-11:15, 11:15-12:15, 1:15-2:15, 2:15-3:15, 3:30-4:30, 4:30-5:30
+- Practical / Lab: 10:15-12:15, 1:15-3:15, 3:30-5:30
+
+## Student Leave Flow
+
+Students can submit leave requests with:
+
+- Leave Type
+- From Date
+- To Date
+- Reason
+
+The backend stores the leave type separately from the duration enum, so the UI should continue sending:
+
+- `duration: Full Day`
+- `leaveType: Sick Leave | Medical Leave | Personal Leave | Emergency Leave`
+
+## API Expectations
+
+The frontend uses the backend at `http://localhost:5000` by default.
+
+Protected requests should send:
+
+```http
+Authorization: Bearer <token>
+```
+
+## Development
+
+Typical local commands:
+
+```bash
+cd Frontend
+npm install
+npm run dev
+```
+
+Production build:
+
+```bash
+npm run build
+```
+
+## Notes
+
+- Keep the teacher dashboard aligned with the current classroom and subject assignments returned by the backend.
+- Avoid reintroducing timetable-only selection in the attendance modal unless the backend model is extended for that workflow again.
+- If you change slot definitions, update both the modal UI and the backend validation in tandem.
