@@ -12,7 +12,7 @@ router.get('/attendance-records', protect, authorizeRoles('Teacher','Admin','Sup
 router.get('/classrooms/:classroomId/students', protect, authorizeRoles('Teacher','Admin','SuperAdmin'), getStudentsForClassroom);
 router.get('/dashboard', protect, authorizeRoles('Teacher'), getTeacherDashboard);
 router.get('/attendance-context', protect, authorizeRoles('Teacher'), getAttendanceContext);
-router.get('/debug/me', protect, authorizeRoles('Teacher'), getTeacherDebug);
+// router.get('/debug/me', protect, authorizeRoles('Teacher'), getTeacherDebug);
 router.get('/leave-requests', protect, authorizeRoles('Teacher','Admin','SuperAdmin'), getTeacherLeaveRequests);
 router.patch('/leave-requests/:leaveId', protect, authorizeRoles('Teacher','Admin','SuperAdmin'), reviewLeaveRequest);
 
