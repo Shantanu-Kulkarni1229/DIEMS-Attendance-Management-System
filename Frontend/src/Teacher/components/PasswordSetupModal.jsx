@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { patch } from '../../services/apiClient';
 import { logout } from '../../services/session';
+import { ButtonSpinner } from './Skeletons';
 
-export default function PasswordSetupModal({ onClose }) {
+export default function PasswordSetupModal({ onClose, theme = 'light' }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -42,7 +43,7 @@ export default function PasswordSetupModal({ onClose }) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
-      <div className="bg-white/90 backdrop-blur-xl rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-white p-8 relative animate-in fade-in zoom-in duration-300">
+      <div className={`${theme === 'dark' ? 'bg-slate-900/95 border-slate-700 text-slate-100' : 'bg-white/90 border-white text-slate-800'} backdrop-blur-xl rounded-3xl shadow-2xl w-full max-w-md overflow-hidden p-8 relative animate-in fade-in zoom-in duration-300`}>
         
         {/* Decorative elements */}
         <div className="absolute top-[-50px] right-[-50px] w-32 h-32 bg-blue-400 rounded-full blur-3xl opacity-20 pointer-events-none"></div>
@@ -164,7 +165,7 @@ export default function PasswordSetupModal({ onClose }) {
                   : 'bg-slate-100 text-slate-400 cursor-not-allowed'
               }`}
             >
-              {isSubmitting ? 'Updating Password...' : 'Continue to Dashboard'}
+              {isSubmitting ? <div className="flex items-center justify-center"><ButtonSpinner size={4} /></div> : 'Continue to Dashboard'}
             </button>
             <button 
               type="button"

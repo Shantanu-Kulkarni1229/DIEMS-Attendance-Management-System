@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { markAttendance, updateAttendance, patchAttendance, getTeacherAttendanceRecords, getTeacherDashboard, getStudentsForClassroom, getAttendanceContext, getTeacherDebug } = require('../controllers/teacherController');
+const { markAttendance, updateAttendance, patchAttendance, getTeacherAttendanceRecords, addAttendanceCredits, getTeacherAttendanceCredits, getTeacherDashboard, getStudentsForClassroom, getAttendanceContext, getTeacherDebug } = require('../controllers/teacherController');
 const { getTeacherLeaveRequests, reviewLeaveRequest } = require('../controllers/leaveController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorizeRoles } = require('../middleware/roleMiddleware');
@@ -9,6 +9,8 @@ router.post('/mark-attendance', protect, authorizeRoles('Teacher'), markAttendan
 router.put('/update-attendance/:attendanceId', protect, authorizeRoles('Teacher','Admin','SuperAdmin'), updateAttendance);
 router.patch('/update-attendance/:attendanceId', protect, authorizeRoles('Teacher','Admin','SuperAdmin'), patchAttendance);
 router.get('/attendance-records', protect, authorizeRoles('Teacher','Admin','SuperAdmin'), getTeacherAttendanceRecords);
+router.get('/attendance-credits', protect, authorizeRoles('Teacher','Admin','SuperAdmin'), getTeacherAttendanceCredits);
+router.post('/attendance-credits', protect, authorizeRoles('Teacher','Admin','SuperAdmin'), addAttendanceCredits);
 router.get('/classrooms/:classroomId/students', protect, authorizeRoles('Teacher','Admin','SuperAdmin'), getStudentsForClassroom);
 router.get('/dashboard', protect, authorizeRoles('Teacher'), getTeacherDashboard);
 router.get('/attendance-context', protect, authorizeRoles('Teacher'), getAttendanceContext);

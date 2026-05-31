@@ -1,4 +1,4 @@
-exports.calculateStudentAttendance = (studentId, attendanceRecords) => {
+exports.calculateStudentAttendance = (studentId, attendanceRecords, attendanceCredits = []) => {
   const subjectMap = {}; // subjectId -> {present, total}
   let totalPresent = 0;
   let totalSessions = 0;
@@ -7,17 +7,52 @@ exports.calculateStudentAttendance = (studentId, attendanceRecords) => {
     const subjectId = rec.subject._id.toString();
     const subjectName = rec.subject.name || 'Unknown';
     if (!subjectMap[subjectId]) subjectMap[subjectId] = { subject: subjectName, present: 0, total: 0 };
+    // compute session duration (hours)
+    let durationHours = 1;
+    try {
+      if (rec.lectureSession && rec.lectureSession.startDateTime && rec.lectureSession.endDateTime) {
+        const sd = new Date(rec.lectureSession.startDateTime);
+        const ed = new Date(rec.lectureSession.endDateTime);
+        durationHours = Math.max(1, Math.round((ed - sd) / 3600000));
+      } else if (rec.date && rec.startTime && rec.endTime) {
+        const day = new Date(rec.date);
+        const [sh, sm] = (rec.startTime || '').split(':').map(Number);
+        const [eh, em] = (rec.endTime || '').split(':').map(Number);
+        const sd = new Date(day); sd.setHours(sh || 0, sm || 0, 0, 0);
+        const ed = new Date(day); ed.setHours(eh || 0, em || 0, 0, 0);
+        durationHours = Math.max(1, Math.round((ed - sd) / 3600000));
+      }
+    } catch (err) {
+      durationHours = 1;
+    }
+
+    const isPractical = (rec.subject && (rec.subject.category || '').toLowerCase() === 'practical');
+    const weight = isPractical ? Math.round(durationHours / 2) : Math.round(durationHours);
+
     const studentEntry = Array.isArray(rec.records)
       ? rec.records.find((r) => r && r.student && r.student.toString() === studentId.toString())
       : null;
     if (studentEntry) {
-      subjectMap[subjectId].total += 1;
-      totalSessions += 1;
+      subjectMap[subjectId].total += weight;
+      totalSessions += weight;
       if (studentEntry.status === 'present') {
-        subjectMap[subjectId].present += 1;
-        totalPresent += 1;
+        subjectMap[subjectId].present += weight;
+        totalPresent += weight;
       }
     }
+  });
+
+  attendanceCredits.forEach((credit) => {
+    if (!credit || !credit.subject || !credit.subject._id) return;
+    const subjectId = credit.subject._id.toString();
+    const subjectName = credit.subject.name || 'Unknown';
+    if (!subjectMap[subjectId]) subjectMap[subjectId] = { subject: subjectName, present: 0, total: 0 };
+
+    const lectures = Number(credit.lectures || 0);
+    if (!Number.isFinite(lectures) || lectures <= 0) return;
+
+    subjectMap[subjectId].present += lectures;
+    totalPresent += lectures;
   });
   const subjects = Object.keys(subjectMap).map((k) => {
     const s = subjectMap[k];
@@ -51,6 +86,7 @@ const normalizeSessionType = (value) => {
 };
 
 const getManualSlot = (sessionType, startTime, endTime) => {
+  // Keep for compatibility: exact match if present
   const normalizedType = normalizeSessionType(sessionType);
   if (!normalizedType || !startTime || !endTime) return null;
   const slots = MANUAL_SLOTS[normalizedType] || [];
@@ -61,17 +97,40 @@ const validateManualAttendanceSlot = ({ sessionType, startTime, endTime }) => {
   const normalizedType = normalizeSessionType(sessionType);
   if (!normalizedType) return { valid: false, message: 'Session type must be Lecture or Practical' };
 
-  const allowedSlot = getManualSlot(normalizedType, startTime, endTime);
-  if (!allowedSlot) {
-    return {
-      valid: false,
-      message: normalizedType === 'Lecture'
-        ? 'Lecture sessions must use one of the 1-hour lecture slots'
-        : 'Practical sessions must use one of the 2-hour practical slots'
-    };
+  if (!startTime || !endTime) return { valid: false, message: 'Start time and end time are required' };
+
+  // allowed start times for this session type
+  const allowedStarts = (MANUAL_SLOTS[normalizedType] || []).map((s) => s.startTime);
+  if (!allowedStarts.includes(startTime)) {
+    return { valid: false, message: `${normalizedType} start time must be one of: ${allowedStarts.join(', ')}` };
   }
 
-  return { valid: true, sessionType: normalizedType, slot: allowedSlot };
+  // parse times on arbitrary same day
+  try {
+    const [sh, sm] = String(startTime).split(':').map(Number);
+    const [eh, em] = String(endTime).split(':').map(Number);
+    if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) {
+      return { valid: false, message: 'Invalid start or end time format' };
+    }
+    const sd = new Date(); sd.setHours(sh, sm, 0, 0);
+    const ed = new Date(); ed.setHours(eh, em, 0, 0);
+    const durationMinutes = Math.round((ed - sd) / 60000);
+    if (durationMinutes <= 0) return { valid: false, message: 'End time must be after start time' };
+
+    if (normalizedType === 'Lecture') {
+      if (durationMinutes % 60 !== 0) return { valid: false, message: 'Lecture duration must be in whole hours (60 min multiples)' };
+      const hours = durationMinutes / 60;
+      if (hours < 1) return { valid: false, message: 'Lecture duration must be at least 1 hour' };
+    } else if (normalizedType === 'Practical') {
+      if (durationMinutes % 120 !== 0) return { valid: false, message: 'Practical duration must be in 2-hour blocks (120 min multiples)' };
+      const hours = durationMinutes / 60;
+      if (hours < 2) return { valid: false, message: 'Practical duration must be at least 2 hours' };
+    }
+
+    return { valid: true, sessionType: normalizedType, slot: { startTime, endTime, durationMinutes } };
+  } catch (err) {
+    return { valid: false, message: 'Invalid time values' };
+  }
 };
 
 exports.MANUAL_SLOTS = MANUAL_SLOTS;

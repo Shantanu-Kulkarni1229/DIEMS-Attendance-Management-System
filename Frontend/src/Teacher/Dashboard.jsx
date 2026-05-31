@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import Navbar from './components/Navbar';
 import Overview from './Overview/Overview';
+import LeaveRequests from './LeaveRequests';
+import AttendanceRecords from './AttendanceRecords';
 import PasswordSetupModal from './components/PasswordSetupModal';
 import MarkAttendanceModal from './components/MarkAttendanceModal';
 import { get } from '../services/apiClient';
@@ -12,9 +14,11 @@ export default function TeacherDashboard() {
   const [isFirstLogin, setIsFirstLogin] = useState(false);
   const [profile, setProfile] = useState(null);
   const [dashboardData, setDashboardData] = useState(null);
+  const [dashboardLoading, setDashboardLoading] = useState(true);
   const [todaySessions, setTodaySessions] = useState([]);
   const [showMarkAttendance, setShowMarkAttendance] = useState(false);
   const [selectedClass, setSelectedClass] = useState(null);
+  const [theme, setTheme] = useState(() => localStorage.getItem('teacher-theme') || 'light');
 
   const mergeTeacherPayload = (dashboardPayload, contextPayload) => ({
     ...(dashboardPayload || {}),
@@ -31,6 +35,7 @@ export default function TeacherDashboard() {
   });
 
   const refreshTeacherData = async () => {
+    setDashboardLoading(true);
     try {
       const [dashboardPayload, contextPayload] = await Promise.all([
         get('/api/teacher/dashboard'),
@@ -39,6 +44,8 @@ export default function TeacherDashboard() {
       setDashboardData(mergeTeacherPayload(dashboardPayload, contextPayload));
     } catch (error) {
       setDashboardData(null);
+    } finally {
+      setDashboardLoading(false);
     }
 
     try {
@@ -64,18 +71,22 @@ export default function TeacherDashboard() {
     loadMe();
   }, []);
 
+  useEffect(() => {
+    localStorage.setItem('teacher-theme', theme);
+  }, [theme]);
+
   const handleMarkAttendance = (classItem = null) => {
     setSelectedClass(classItem);
     setShowMarkAttendance(true);
   };
 
   return (
-    <div className="min-h-screen bg-sky-50/50 flex font-sans relative overflow-hidden">
+    <div className={`teacher-theme teacher-theme-${theme} h-screen flex font-sans relative overflow-hidden ${theme === 'dark' ? 'bg-slate-950' : 'bg-sky-50/50'}`}>
       {/* Background decorations */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-100/40 rounded-full blur-3xl pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-5%] w-[30%] h-[30%] bg-sky-100/40 rounded-full blur-3xl pointer-events-none"></div>
 
-      {isFirstLogin && <PasswordSetupModal onClose={() => setIsFirstLogin(false)} />}
+      {isFirstLogin && <PasswordSetupModal onClose={() => setIsFirstLogin(false)} theme={theme} />}
       
       {/* Sidebar */}
       <Sidebar 
@@ -85,17 +96,22 @@ export default function TeacherDashboard() {
         setSidebarOpen={setSidebarOpen} 
         onMarkAttendanceClick={() => handleMarkAttendance(null)}
         profile={profile}
+        theme={theme}
+        setTheme={setTheme}
       />
 
       {/* Main Content */}
-      <div className={`flex-1 flex flex-col transition-all duration-300 relative z-10 w-full lg:w-auto`}>
-        <Navbar setSidebarOpen={setSidebarOpen} sidebarOpen={sidebarOpen} profile={profile} />
+      <div className={`flex-1 flex flex-col transition-all duration-300 relative z-10 w-full h-screen lg:pl-72`}>
+        <Navbar setSidebarOpen={setSidebarOpen} sidebarOpen={sidebarOpen} profile={profile} theme={theme} />
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8">
           <div className="max-w-7xl mx-auto">
-            {currentPage === 'dashboard' && <Overview onMarkAttendance={handleMarkAttendance} profile={profile} dashboardData={dashboardData} todaySessions={todaySessions} />}
+            {currentPage === 'dashboard' && <Overview onMarkAttendance={handleMarkAttendance} profile={profile} dashboardData={dashboardData} todaySessions={todaySessions} loading={dashboardLoading} theme={theme} />}
+            {currentPage === 'leave-requests' && <LeaveRequests onChanged={refreshTeacherData} loading={dashboardLoading} theme={theme} />}
+            {currentPage === 'attendance-theory' && <AttendanceRecords dashboardData={dashboardData} mode="lecture" loading={dashboardLoading} theme={theme} />}
+            {currentPage === 'attendance-practical' && <AttendanceRecords dashboardData={dashboardData} mode="practical" loading={dashboardLoading} theme={theme} />}
             {/* Placeholder for other pages */}
-            {currentPage !== 'dashboard' && (
+            {currentPage !== 'dashboard' && currentPage !== 'leave-requests' && currentPage !== 'attendance-theory' && currentPage !== 'attendance-practical' && (
               <div className="flex flex-col items-center justify-center h-[60vh] text-slate-400 bg-white/50 backdrop-blur-sm rounded-3xl border border-white/60 shadow-sm">
                 <svg className="w-16 h-16 mb-4 text-sky-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
@@ -114,6 +130,7 @@ export default function TeacherDashboard() {
           initialData={selectedClass} 
           dashboardData={dashboardData}
           onSaved={refreshTeacherData}
+          theme={theme}
         />
       )}
     </div>

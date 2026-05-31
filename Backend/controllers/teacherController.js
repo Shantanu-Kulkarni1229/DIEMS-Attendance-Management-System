@@ -1,5 +1,6 @@
 const asyncHandler = require('express-async-handler');
 const Attendance = require('../models/Attendance');
+const AttendanceCredit = require('../models/AttendanceCredit');
 const Subject = require('../models/Subject');
 const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
@@ -254,7 +255,11 @@ exports.getTeacherAttendanceRecords = asyncHandler(async (req, res) => {
   if (req.query.sessionType) query.sessionType = normalizeSessionType(req.query.sessionType) || req.query.sessionType;
   if (req.query.startTime) query.startTime = req.query.startTime;
   if (req.query.endTime) query.endTime = req.query.endTime;
-  if (req.query.date) {
+  if (req.query.from || req.query.to) {
+    query.date = {};
+    if (req.query.from) query.date.$gte = toDayRange(req.query.from)?.start || new Date(req.query.from);
+    if (req.query.to) query.date.$lte = toDayRange(req.query.to)?.end || new Date(req.query.to);
+  } else if (req.query.date) {
     const dayRange = toDayRange(req.query.date);
     if (dayRange) {
       query.date = { $gte: dayRange.start, $lte: dayRange.end };
@@ -262,13 +267,133 @@ exports.getTeacherAttendanceRecords = asyncHandler(async (req, res) => {
   }
 
   const records = await Attendance.find(query)
-    .populate('classroom', 'name')
-    .populate('subject', 'name code')
+    .populate('classroom', 'name year')
+    .populate('subject', 'name code category year')
     .populate('teacher', 'name email')
     .populate('lectureSession')
     .populate('records.student', 'name rollNo prn className division')
     .sort({ date: -1 });
   res.status(200).json(records);
+});
+
+exports.getTeacherAttendanceCredits = asyncHandler(async (req, res) => {
+  const query = {};
+
+  if (req.user.role === 'Teacher') query.teacher = req.user._id;
+  if (req.query.classroom) query.classroom = req.query.classroom;
+  if (req.query.subject) query.subject = req.query.subject;
+
+  if (req.query.from || req.query.to) {
+    query.date = {};
+    if (req.query.from) query.date.$gte = toDayRange(req.query.from)?.start || new Date(req.query.from);
+    if (req.query.to) query.date.$lte = toDayRange(req.query.to)?.end || new Date(req.query.to);
+  } else if (req.query.date) {
+    const dayRange = toDayRange(req.query.date);
+    if (dayRange) query.date = { $gte: dayRange.start, $lte: dayRange.end };
+  }
+
+  const credits = await AttendanceCredit.find(query)
+    .populate('classroom', 'name year')
+    .populate('subject', 'name code category year')
+    .populate('student', 'name rollNo prn className division')
+    .sort({ date: -1, createdAt: -1 });
+
+  res.status(200).json(credits);
+});
+
+exports.addAttendanceCredits = asyncHandler(async (req, res) => {
+  const { classroom, subject, date, credits } = req.body;
+
+  if (!classroom || !subject || !date || !Array.isArray(credits) || !credits.length) {
+    res.status(400);
+    throw new Error('classroom, subject, date and credits array are required');
+  }
+
+  if (req.user.role === 'Teacher') {
+    const allowedClassroomIds = await resolveTeacherClassroomIds(req.user._id);
+    const allowedClassroom = allowedClassroomIds.some((id) => id.toString() === classroom.toString());
+    if (!allowedClassroom) {
+      res.status(403);
+      throw new Error('Teacher is not assigned to this classroom');
+    }
+
+    const allowedSubjectIds = await resolveTeacherSubjectIds(req.user._id);
+    const allowedSubject = allowedSubjectIds.some((id) => id.toString() === subject.toString());
+    if (!allowedSubject) {
+      res.status(403);
+      throw new Error('Teacher is not assigned to this subject');
+    }
+  }
+
+  const normalized = credits
+    .map((item) => ({ student: item?.student, lectures: Number(item?.lectures || 0) }))
+    .filter((item) => item.student && Number.isInteger(item.lectures) && item.lectures > 0);
+
+  if (!normalized.length) {
+    res.status(400);
+    throw new Error('At least one valid credit entry with lectures > 0 is required');
+  }
+
+  if (normalized.some((item) => item.lectures > 50)) {
+    res.status(400);
+    throw new Error('lectures cannot exceed 50 for a single student in one request');
+  }
+
+  const uniqueStudentIds = [...new Set(normalized.map((item) => item.student.toString()))];
+  if (uniqueStudentIds.length !== normalized.length) {
+    res.status(400);
+    throw new Error('Duplicate student entries found in credits payload');
+  }
+
+  const studentsInClassroom = await Student.countDocuments({ _id: { $in: uniqueStudentIds }, classroom });
+  if (studentsInClassroom !== uniqueStudentIds.length) {
+    res.status(400);
+    throw new Error('One or more students do not belong to the selected classroom');
+  }
+
+  const dayRange = toDayRange(date);
+  if (!dayRange) {
+    res.status(400);
+    throw new Error('Invalid date');
+  }
+
+  const ops = normalized.map((item) => ({
+    updateOne: {
+      filter: {
+        date: dayRange.start,
+        classroom,
+        subject,
+        student: item.student,
+        teacher: req.user._id
+      },
+      update: {
+        $inc: { lectures: item.lectures },
+        $setOnInsert: {
+          date: dayRange.start,
+          classroom,
+          subject,
+          student: item.student,
+          teacher: req.user._id
+        }
+      },
+      upsert: true
+    }
+  }));
+
+  await AttendanceCredit.bulkWrite(ops);
+
+  const updatedCredits = await AttendanceCredit.find({
+    date: dayRange.start,
+    classroom,
+    subject,
+    student: { $in: uniqueStudentIds },
+    teacher: req.user._id
+  }).populate('student', 'name rollNo prn');
+
+  res.status(201).json({
+    message: 'Attendance credits added successfully',
+    updatedCredits
+  });
 });
 
 exports.getStudentsForClassroom = asyncHandler(async (req, res) => {
