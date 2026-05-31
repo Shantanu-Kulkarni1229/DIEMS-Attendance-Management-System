@@ -12,6 +12,10 @@ The system is working around a manual attendance workflow:
 - Attendance is stored against the selected time range, not a timetable lecture number
 - Practical attendance stores the selected batch ids and a server-side batch snapshot for auditability
 - Student leave requests store the leave category separately from the enum-safe duration field
+- Practical batch size is now a classroom setting, so an admin can choose 10, 15, 20, or any valid size per classroom
+- Leave requests can store cloud attachment metadata such as a sick-note URL, filename, type, and size
+- When a leave is approved, the backend can automatically sync it into attendance records for the matching classroom/date/session slot
+- Students can upload leave attachments through the frontend; the backend stores the returned Cloudinary URL and metadata on the leave record
 
 ### Practical Batch Reasoning
 
@@ -19,9 +23,17 @@ Practical batches are now treated as a real part of attendance data, not just a 
 
 - The frontend still groups students into 20-student practical batches so teachers can select batches quickly while taking attendance
 - The backend now validates those batch ids before saving attendance, so the record cannot rely on a browser-only grouping
+- The backend batch size is configurable per classroom, but the frontend still needs to fetch and render that value before it can fully support non-20 batches
 - The backend also stores a batch snapshot with the attendance record, which preserves the exact batch composition used that day
 - This makes the system scalable because future reports, edits, and audits can use stored data instead of recreating the batch logic from the frontend
 - This also protects attendance history if the classroom roster changes later, because the saved snapshot keeps the original practical grouping intact
+
+### Leave Attachments And Approval
+
+- The leave form can carry a cloud-stored attachment reference instead of embedding files directly in the database
+- The backend stores the attachment metadata and leaves the actual upload provider choice to the frontend or cloud layer
+- When a teacher approves a leave, the backend can mark the matching attendance slot as leave-linked so future reports can reflect the approval
+- The frontend now includes the upload UI and teacher attachment link rendering; classroom batch-size editing is the remaining admin UI piece
 
 ## Assistant Context
 

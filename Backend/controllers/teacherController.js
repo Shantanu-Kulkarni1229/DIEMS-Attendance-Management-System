@@ -3,10 +3,12 @@ const Attendance = require('../models/Attendance');
 const Subject = require('../models/Subject');
 const Teacher = require('../models/Teacher');
 const Student = require('../models/Student');
+const Leave = require('../models/Leave');
 const Classroom = require('../models/Classroom');
 const TimetableEntry = require('../models/TimetableEntry');
 const AttendanceService = require('../services/attendanceService');
 const { validateManualAttendanceSlot, normalizeSessionType, buildPracticalBatches } = require('../utils/attendanceUtils');
+const { doesLeaveCoverAttendance } = require('../utils/leaveAttendanceUtils');
 
 const isValidStatus = (status) => status === 'present' || status === 'absent';
 
@@ -45,6 +47,40 @@ const resolveTeacherSubjectIds = async (teacherId) => {
 
   const timetableSubjectIds = await TimetableEntry.distinct('subject', { plannedTeacher: teacherId });
   return [...new Set(timetableSubjectIds.map((id) => id.toString()))];
+};
+
+const applyApprovedLeavesToRecords = async ({ records, classroomId, date, sessionType, startTime, endTime }) => {
+  const dayRange = toDayRange(date);
+  if (!dayRange || !Array.isArray(records) || !records.length) return records;
+
+  const studentIds = [...new Set(records.map((record) => record.student.toString()))];
+  if (!studentIds.length) return records;
+
+  const approvedLeaves = await Leave.find({
+    classroom: classroomId,
+    student: { $in: studentIds },
+    status: 'Approved',
+    fromDate: { $lte: dayRange.end },
+    toDate: { $gte: dayRange.start }
+  }).select('_id student duration leaveType fromDate toDate');
+
+  const leaveByStudent = new Map();
+  approvedLeaves.forEach((leave) => {
+    if (!doesLeaveCoverAttendance({ duration: leave.duration, sessionType, startTime, endTime })) return;
+    const key = leave.student.toString();
+    if (!leaveByStudent.has(key)) leaveByStudent.set(key, leave);
+  });
+
+  return records.map((record) => {
+    const leave = leaveByStudent.get(record.student.toString());
+    if (!leave) return record;
+    return {
+      ...record,
+      status: 'absent',
+      leaveId: leave._id,
+      attendanceSource: 'leave'
+    };
+  });
 };
 
 exports.markAttendance = asyncHandler(async (req, res) => {
@@ -104,9 +140,9 @@ exports.markAttendance = asyncHandler(async (req, res) => {
       throw new Error('At least one practical batch must be selected');
     }
 
-    const classroomDoc = await Classroom.findById(classroom).select('name');
+    const classroomDoc = await Classroom.findById(classroom).select('name practicalBatchSize');
     const classroomStudents = await Student.find({ classroom }).select('_id rollNo').sort({ rollNo: 1 }).lean();
-    const allPracticalBatches = buildPracticalBatches(classroomStudents, classroomDoc?.name);
+    const allPracticalBatches = buildPracticalBatches(classroomStudents, classroomDoc?.name, classroomDoc?.practicalBatchSize);
     const batchMap = new Map(allPracticalBatches.map((batch) => [batch.batchId, batch]));
     const invalidBatchIds = selectedPracticalBatchIds.filter((batchId) => !batchMap.has(batchId));
     if (invalidBatchIds.length) {
@@ -128,6 +164,15 @@ exports.markAttendance = asyncHandler(async (req, res) => {
     res.status(400);
     throw new Error('One or more students do not belong to the selected classroom');
   }
+
+  const recordsWithLeaves = await applyApprovedLeavesToRecords({
+    records,
+    classroomId: classroom,
+    date,
+    sessionType: manualSlotCheck.sessionType,
+    startTime: manualSlotCheck.slot.startTime,
+    endTime: manualSlotCheck.slot.endTime
+  });
 
   const dayRange = toDayRange(date);
   const slotFilter = {
@@ -152,7 +197,7 @@ exports.markAttendance = asyncHandler(async (req, res) => {
       practicalBatchIds: selectedPracticalBatchIds,
       practicalBatchSnapshot,
       teacher: req.user._id,
-      records
+      records: recordsWithLeaves
     });
   } catch (err) {
     if (err && err.code === 11000) {
@@ -218,7 +263,14 @@ exports.updateAttendance = asyncHandler(async (req, res) => {
     throw new Error('One or more students do not belong to this attendance classroom');
   }
 
-  attendance.records = records;
+  attendance.records = await applyApprovedLeavesToRecords({
+    records,
+    classroomId: attendance.classroom,
+    date: attendance.date,
+    sessionType: attendance.sessionType,
+    startTime: attendance.startTime,
+    endTime: attendance.endTime
+  });
   await attendance.save();
   await AttendanceService.recalculateForClassroom(attendance.classroom, attendance.subject);
   res.json(attendance);
@@ -253,26 +305,42 @@ exports.patchAttendance = asyncHandler(async (req, res) => {
     throw new Error('One or more students do not belong to this attendance classroom');
   }
 
+  const recordsWithLeaves = await applyApprovedLeavesToRecords({
+    records,
+    classroomId: attendance.classroom,
+    date: attendance.date,
+    sessionType: attendance.sessionType,
+    startTime: attendance.startTime,
+    endTime: attendance.endTime
+  });
+
   // Merge incoming records: update matching student entries and append new ones
   const incomingMap = {};
-  records.forEach(r => {
+  recordsWithLeaves.forEach(r => {
     if (!r.student) return;
-    incomingMap[r.student.toString()] = r.status;
+    incomingMap[r.student.toString()] = r;
   });
 
   // Update existing records
   attendance.records = attendance.records.map(r => {
     const sid = r.student.toString();
     if (Object.prototype.hasOwnProperty.call(incomingMap, sid)) {
-      r.status = incomingMap[sid];
+      r.status = incomingMap[sid].status;
+      r.leaveId = incomingMap[sid].leaveId || null;
+      r.attendanceSource = incomingMap[sid].attendanceSource || 'manual';
       delete incomingMap[sid];
     }
     return r;
   });
 
   // Append any remaining incoming records
-  for (const [studentId, status] of Object.entries(incomingMap)) {
-    attendance.records.push({ student: studentId, status });
+  for (const [studentId, record] of Object.entries(incomingMap)) {
+    attendance.records.push({
+      student: studentId,
+      status: record.status,
+      leaveId: record.leaveId || null,
+      attendanceSource: record.attendanceSource || 'manual'
+    });
   }
 
   await attendance.save();
@@ -332,7 +400,7 @@ exports.getStudentsForClassroom = asyncHandler(async (req, res) => {
 exports.getTeacherDashboard = asyncHandler(async (req, res) => {
   const teacher = await Teacher.findById(req.user._id)
     .select('-password')
-    .populate('assignedClassrooms', 'name year');
+    .populate('assignedClassrooms', 'name year practicalBatchSize');
 
   if (!teacher) {
     res.status(404);
@@ -341,7 +409,7 @@ exports.getTeacherDashboard = asyncHandler(async (req, res) => {
 
   const fallbackClassroomIds = await resolveTeacherClassroomIds(req.user._id);
   const classroomDocs = fallbackClassroomIds.length
-    ? await Student.db.model('Classroom').find({ _id: { $in: fallbackClassroomIds } }).select('name year')
+    ? await Student.db.model('Classroom').find({ _id: { $in: fallbackClassroomIds } }).select('name year practicalBatchSize')
     : (Array.isArray(teacher.assignedClassrooms) ? teacher.assignedClassrooms : []);
 
   const resolvedSubjectIds = await resolveTeacherSubjectIds(req.user._id);
@@ -387,7 +455,7 @@ exports.getTeacherDashboard = asyncHandler(async (req, res) => {
 exports.getAttendanceContext = asyncHandler(async (req, res) => {
   const teacher = await Teacher.findById(req.user._id)
     .select('-password')
-    .populate('assignedClassrooms', 'name year');
+    .populate('assignedClassrooms', 'name year practicalBatchSize');
 
   if (!teacher) {
     res.status(404);
@@ -396,7 +464,7 @@ exports.getAttendanceContext = asyncHandler(async (req, res) => {
 
   const fallbackClassroomIds = await resolveTeacherClassroomIds(req.user._id);
   const assignedClassrooms = fallbackClassroomIds.length
-    ? await Student.db.model('Classroom').find({ _id: { $in: fallbackClassroomIds } }).select('name year')
+    ? await Student.db.model('Classroom').find({ _id: { $in: fallbackClassroomIds } }).select('name year practicalBatchSize')
     : (Array.isArray(teacher.assignedClassrooms) ? teacher.assignedClassrooms : []);
   const resolvedSubjectIds = await resolveTeacherSubjectIds(req.user._id);
   const assignedSubjects = resolvedSubjectIds.length

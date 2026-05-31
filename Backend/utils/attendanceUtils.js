@@ -79,7 +79,7 @@ exports.normalizeSessionType = normalizeSessionType;
 exports.getManualSlot = getManualSlot;
 exports.validateManualAttendanceSlot = validateManualAttendanceSlot;
 
-const BATCH_SIZE = 20;
+const DEFAULT_BATCH_SIZE = 20;
 
 const compareRollNumbers = (left, right) => String(left || '').localeCompare(String(right || ''), undefined, { numeric: true, sensitivity: 'base' });
 
@@ -94,13 +94,20 @@ const getBatchPrefix = (classroomName = '') => {
   return 'A';
 };
 
-const buildPracticalBatches = (students = [], classroomName = '') => {
+const normalizeBatchSize = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) return DEFAULT_BATCH_SIZE;
+  return parsed;
+};
+
+const buildPracticalBatches = (students = [], classroomName = '', batchSize = DEFAULT_BATCH_SIZE) => {
+  const size = normalizeBatchSize(batchSize);
   const sortedStudents = [...students].sort((left, right) => compareRollNumbers(left.rollNo || left.roll, right.rollNo || right.roll));
   const prefix = getBatchPrefix(classroomName);
   const batches = [];
 
   sortedStudents.forEach((student, index) => {
-    const batchIndex = Math.floor(index / BATCH_SIZE);
+    const batchIndex = Math.floor(index / size);
     if (!batches[batchIndex]) {
       batches[batchIndex] = {
         batchId: `${prefix}-${batchIndex + 1}`,
@@ -121,3 +128,4 @@ const buildPracticalBatches = (students = [], classroomName = '') => {
 };
 
 exports.buildPracticalBatches = buildPracticalBatches;
+exports.normalizeBatchSize = normalizeBatchSize;

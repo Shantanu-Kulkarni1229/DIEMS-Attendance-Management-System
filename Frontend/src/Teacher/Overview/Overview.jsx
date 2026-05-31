@@ -30,6 +30,14 @@ const leaveRequestsFallback = [
   { initials: "SK", name: "Sahil Kale", classInfo: "SYB - IOT (Theory)", date: "23 May 2025", duration: "Full Day", color: "bg-orange-100 text-orange-700" },
 ];
 
+const formatFileSize = (value) => {
+  if (!value || Number.isNaN(Number(value))) return '';
+  const size = Number(value);
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 const quickActions = [
   { title: "Mark Attendance", subtitle: "Mark attendance for your classes", icon: "📅", color: "text-blue-600" },
   { title: "Edit Attendance", subtitle: "Edit or update existing records", icon: "✏️", color: "text-emerald-600" },
@@ -326,6 +334,14 @@ export default function Overview({ onMarkAttendance, profile, dashboardData, tod
                 <div className="flex-1">
                   <h4 className="text-sm font-bold text-slate-800">{req.student?.name || req.name}</h4>
                   <p className="text-xs text-slate-500 mt-0.5">{req.classroom?.name || req.classInfo}</p>
+                  {req.attachmentUrl && (
+                    <a href={req.attachmentUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700">
+                      View Attachment
+                      <span className="text-[10px] text-slate-400">
+                        {req.attachmentName ? `${req.attachmentName}${req.attachmentSize ? ` · ${formatFileSize(req.attachmentSize)}` : ''}` : ''}
+                      </span>
+                    </a>
+                  )}
                 </div>
                 <div className="text-right flex flex-col items-end gap-2">
                   <div>

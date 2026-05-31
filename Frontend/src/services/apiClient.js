@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
+export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000';
 
 const getToken = () => localStorage.getItem('token');
 
@@ -42,6 +42,23 @@ export const request = async (path, options = {}) => {
     headers: buildHeaders(headers, hasBody),
     body: hasBody ? JSON.stringify(body) : undefined
   });
+  return parseResponse(response);
+};
+
+export const uploadLeaveAttachment = async (file) => {
+  const formData = new FormData();
+  formData.append('attachment', file);
+
+  const headers = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE}/api/student/leaves/attachment`, {
+    method: 'POST',
+    headers,
+    body: formData
+  });
+
   return parseResponse(response);
 };
 

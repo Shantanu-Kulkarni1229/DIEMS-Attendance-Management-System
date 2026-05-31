@@ -41,6 +41,12 @@ const canonicalSubjectName = (value) => {
   return subjectAliasMap[cleaned.toUpperCase()] || cleaned;
 };
 
+const parsePracticalBatchSize = (value) => {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) return null;
+  return parsed;
+};
+
 const generateAutoPrn = () => `PRN${Date.now()}${Math.floor(Math.random() * 900 + 100)}`;
 
 exports.createAdmin = asyncHandler(async (req, res) => {
@@ -134,6 +140,7 @@ exports.createTeacher = asyncHandler(async (req, res) => {
       foundClassroom = await Classroom.create({
         name: classroomName,
         year: classroomYear,
+        practicalBatchSize: 20,
         createdBy: req.user._id
       });
     }
@@ -323,6 +330,31 @@ exports.getClassrooms = asyncHandler(async (req, res) => {
   res.status(200).json(classrooms);
 });
 
+exports.updateClassroom = asyncHandler(async (req, res) => {
+  const { classroomId } = req.params;
+  const { name, year, practicalBatchSize } = req.body;
+
+  const classroom = await Classroom.findById(classroomId);
+  if (!classroom) {
+    res.status(404);
+    throw new Error('Classroom not found');
+  }
+
+  if (name !== undefined) classroom.name = name;
+  if (year !== undefined) classroom.year = year;
+  if (practicalBatchSize !== undefined) {
+    const normalizedBatchSize = parsePracticalBatchSize(practicalBatchSize);
+    if (!normalizedBatchSize) {
+      res.status(400);
+      throw new Error('practicalBatchSize must be an integer between 1 and 100');
+    }
+    classroom.practicalBatchSize = normalizedBatchSize;
+  }
+
+  await classroom.save();
+  res.status(200).json(classroom);
+});
+
 exports.getSubjects = asyncHandler(async (req, res) => {
   const subjects = await Subject.find().populate('assignedTeacher', 'name email branch');
   res.status(200).json(subjects);
@@ -467,7 +499,7 @@ exports.updateTeacher = asyncHandler(async (req, res) => {
         resolved.push(item._id.toString());
       } else if (typeof item === 'string') {
         let found = await Classroom.findOne({ name: item });
-        if (!found) found = await Classroom.create({ name: item, createdBy: req.user._id });
+        if (!found) found = await Classroom.create({ name: item, practicalBatchSize: 20, createdBy: req.user._id });
         resolved.push(found._id.toString());
       }
     }

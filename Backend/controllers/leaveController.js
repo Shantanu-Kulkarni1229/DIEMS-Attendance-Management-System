@@ -1,10 +1,43 @@
 const asyncHandler = require('express-async-handler');
+const Attendance = require('../models/Attendance');
 const Leave = require('../models/Leave');
 const Student = require('../models/Student');
 const Teacher = require('../models/Teacher');
+const AttendanceService = require('../services/attendanceService');
+const { doesLeaveCoverAttendance, toDateRange, applyLeaveToAttendanceRecords } = require('../utils/leaveAttendanceUtils');
+
+const syncApprovedLeaveToAttendance = async (leave) => {
+  const dateRange = toDateRange(leave.fromDate, leave.toDate);
+  if (!dateRange) return;
+
+  const attendanceRecords = await Attendance.find({
+    classroom: leave.classroom,
+    date: { $gte: dateRange.start, $lte: dateRange.end }
+  });
+
+  for (const attendance of attendanceRecords) {
+    if (!doesLeaveCoverAttendance({
+      duration: leave.duration,
+      sessionType: attendance.sessionType,
+      startTime: attendance.startTime,
+      endTime: attendance.endTime
+    })) {
+      continue;
+    }
+
+    const studentId = leave.student.toString();
+    const hasMatchingRecord = Array.isArray(attendance.records)
+      && attendance.records.some((record) => record.student && record.student.toString() === studentId);
+    if (!hasMatchingRecord) continue;
+
+    attendance.records = applyLeaveToAttendanceRecords(attendance.records, leave);
+    await attendance.save();
+    await AttendanceService.recalculateForClassroom(attendance.classroom, attendance.subject);
+  }
+};
 
 exports.createLeaveRequest = asyncHandler(async (req, res) => {
-  const { fromDate, toDate, duration, leaveType, reason } = req.body;
+  const { fromDate, toDate, duration, leaveType, reason, attachmentUrl, attachmentPublicId, attachmentName, attachmentType, attachmentSize } = req.body;
   if (!fromDate || !toDate) {
     res.status(400);
     throw new Error('fromDate and toDate are required');
@@ -24,6 +57,11 @@ exports.createLeaveRequest = asyncHandler(async (req, res) => {
     duration: duration || 'Full Day',
     leaveType,
     reason,
+    attachmentUrl,
+    attachmentPublicId,
+    attachmentName,
+    attachmentType,
+    attachmentSize,
     status: 'Pending'
   });
 
@@ -86,7 +124,32 @@ exports.reviewLeaveRequest = asyncHandler(async (req, res) => {
 
   leave.status = status;
   leave.reviewedBy = req.user._id;
+  leave.reviewedAt = new Date();
   await leave.save();
+
+  if (status === 'Approved') {
+    await syncApprovedLeaveToAttendance(leave);
+  }
+
+  // Emit real-time update so students (and others) can see approval immediately
+  try {
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('leave:updated', {
+        _id: leave._id,
+        status: leave.status,
+        student: leave.student,
+        classroom: leave.classroom,
+        reviewedBy: leave.reviewedBy,
+        reviewedAt: leave.reviewedAt,
+        attachmentUrl: leave.attachmentUrl,
+        attachmentName: leave.attachmentName
+      });
+    }
+  } catch (e) {
+    // non-fatal
+    console.warn('Failed to emit leave update', e && e.message);
+  }
 
   res.status(200).json(leave);
 });

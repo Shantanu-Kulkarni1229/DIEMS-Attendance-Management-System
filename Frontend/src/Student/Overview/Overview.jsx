@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { get, post, getStudentTodayLectures } from '../../services/apiClient';
+import { get, post, getStudentTodayLectures, uploadLeaveAttachment, API_BASE } from '../../services/apiClient';
+import { io } from 'socket.io-client';
 
 const defaultSubjects = [
   { name: 'Machine Learning (ML)', classes: 30, present: 26, absent: 4, percentage: 86.7, status: 'Good' },
@@ -32,12 +33,32 @@ export default function Overview({ attendanceData, loading, error, profile }) {
   const overall = attendanceData?.attendance?.overall;
   const apiSubjects = attendanceData?.attendance?.subjects;
   const [leaveForm, setLeaveForm] = useState({ leaveType: 'Sick Leave', fromDate: '', toDate: '', reason: '' });
+  const [attachmentState, setAttachmentState] = useState({ uploading: false, fileName: '', url: '', publicId: '', type: '', size: 0 });
   const [leaveHistory, setLeaveHistory] = useState([]);
   const [recentLectures, setRecentLectures] = useState([]);
   const [leaveMessage, setLeaveMessage] = useState('');
   const [leaveLoading, setLeaveLoading] = useState(false);
+  const [attachmentMessage, setAttachmentMessage] = useState('');
 
   useEffect(() => {
+    const socket = io(API_BASE);
+    socket.on('connect', () => {
+      // console.log('socket connected', socket.id);
+    });
+
+    socket.on('leave:updated', (payload) => {
+      if (!payload) return;
+      // For testing: refresh leaves on any update event
+      (async () => {
+        try {
+          const updated = await get('/api/student/leaves');
+          setLeaveHistory(Array.isArray(updated) ? updated : []);
+        } catch (e) {}
+      })();
+    });
+
+    return () => socket.disconnect();
+
     const loadLeaves = async () => {
       try {
         const data = await get('/api/student/leaves');
@@ -99,16 +120,49 @@ export default function Overview({ attendanceData, loading, error, profile }) {
         toDate: leaveForm.toDate,
         duration: 'Full Day',
         leaveType: leaveForm.leaveType,
-        reason: leaveForm.reason
+        reason: leaveForm.reason,
+        attachmentUrl: attachmentState.url || '',
+        attachmentPublicId: attachmentState.publicId || '',
+        attachmentName: attachmentState.fileName || '',
+        attachmentType: attachmentState.type || '',
+        attachmentSize: attachmentState.size || 0
       });
       setLeaveMessage('Leave request submitted successfully.');
       setLeaveForm({ leaveType: 'Sick Leave', fromDate: '', toDate: '', reason: '' });
+      setAttachmentState({ uploading: false, fileName: '', url: '', publicId: '', type: '', size: 0 });
+      setAttachmentMessage('');
       const updated = await get('/api/student/leaves');
       setLeaveHistory(Array.isArray(updated) ? updated : []);
     } catch (err) {
       setLeaveMessage(err.message || 'Failed to submit leave request.');
     } finally {
       setLeaveLoading(false);
+    }
+  };
+
+  const handleAttachmentChange = async (event) => {
+    const file = event.target.files && event.target.files[0];
+    setAttachmentMessage('');
+
+    if (!file) return;
+
+    setAttachmentState({ uploading: true, fileName: file.name, url: '', publicId: '', type: file.type, size: file.size });
+
+    try {
+      const result = await uploadLeaveAttachment(file);
+      setAttachmentState({
+        uploading: false,
+        fileName: result.originalName || file.name,
+        url: result.url || '',
+        publicId: result.publicId || '',
+        type: result.fileType || file.type,
+        size: result.fileSize || file.size
+      });
+      setAttachmentMessage('Attachment uploaded and ready to submit.');
+    } catch (err) {
+      setAttachmentState({ uploading: false, fileName: '', url: '', publicId: '', type: '', size: 0 });
+      setAttachmentMessage(err.message || 'Failed to upload attachment.');
+      event.target.value = '';
     }
   };
 
@@ -358,6 +412,11 @@ export default function Overview({ attendanceData, loading, error, profile }) {
                   {leaveMessage}
                 </div>
               )}
+              {attachmentMessage && (
+                <div className="text-sm px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-700">
+                  {attachmentMessage}
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1.5">Leave Type</label>
@@ -382,6 +441,14 @@ export default function Overview({ attendanceData, loading, error, profile }) {
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1.5">Reason</label>
                 <textarea value={leaveForm.reason} onChange={(e) => setLeaveForm((prev) => ({ ...prev, reason: e.target.value }))} rows="2" placeholder="Enter reason for leave..." className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-700 resize-none"></textarea>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1.5">Attachment</label>
+                <input type="file" accept="image/*,.pdf" onChange={handleAttachmentChange} className="w-full text-sm text-slate-600 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-blue-700 hover:file:bg-blue-100" />
+                <p className="mt-1 text-[11px] text-slate-500">Upload a medical certificate, hackathon proof, or other document. JPG, PNG, WEBP, and PDF are allowed.</p>
+                {attachmentState.uploading && <p className="mt-1 text-xs text-blue-600">Uploading attachment...</p>}
+                {!attachmentState.uploading && attachmentState.url && <p className="mt-1 text-xs text-emerald-600">Uploaded: {attachmentState.fileName}</p>}
               </div>
               
               <div className="flex justify-end pt-2">
